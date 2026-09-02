@@ -1,0 +1,82 @@
+name: Ingesta diaria
+
+# Mister publica sus horarios en UTC+1 y no esta confirmado si los desplaza con
+# el horario de verano (docs/INCOGNITAS.md punto 4). En lugar de apostar, se
+# cubren las dos lecturas: 04:20 y 05:20 UTC para el ciclo de las 05:00, y
+# 16:20 y 17:20 UTC para la oferta adicional de las 17:00. Ejecutar de mas es
+# gratis en un repositorio publico, y el job es idempotente.
+#
+# Se dispara 20 minutos despues de cada evento para que Mister haya terminado de
+# resolver pujas y transferencias antes de mirar.
+on:
+  schedule:
+    - cron: '20 4,5,16,17 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Ingerir y analizar sin escribir nada'
+        type: boolean
+        default: false
+
+# El cron de GitHub sufre retrasos de horas, asi que puede solaparse con un
+# disparo manual. Nunca dos ingestas a la vez contra la misma cuenta.
+concurrency:
+  group: ingesta
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Ingerir y analizar
+        env:
+          MISTER_EMAIL: ${{ secrets.MISTER_EMAIL }}
+          MISTER_PASSWORD: ${{ secrets.MISTER_PASSWORD }}
+          MISTER_LEAGUE_ID: ${{ secrets.MISTER_LEAGUE_ID }}
+          # Ritmo prudente: la API no esta documentada y no publica limites.
+          THROTTLE_MS: '2500'
+        run: |
+          node apps/scraper/src/main.ts ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Commitear los datos
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          # meta.json lleva siempre una marca de tiempo, asi que cada ejecucion
+          # produce un commit. Eso mantiene vivo el repositorio y evita que
+          # GitHub desactive el cron por 60 dias sin actividad.
+          if git diff --cached --quiet; then
+            echo "Sin cambios que commitear"
+          else
+            git commit -m "datos: ingesta $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
+
+      - name: Publicar el diagnostico en el resumen del run
+        if: always()
+        run: |
+          if [ -f data/2026-27/diagnostico.md ]; then
+            cat data/2026-27/diagnostico.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No se genero diagnostico en esta ejecucion." >> "$GITHUB_STEP_SUMMARY"
+          fi

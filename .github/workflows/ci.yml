@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Comprobar tipos
+        run: |
+          pnpm exec tsc -b packages/core packages/engine packages/mister-client
+          pnpm exec tsc -p apps/scraper/tsconfig.json
+
+      - name: Tests
+        run: pnpm exec vitest run
+
+      # Recorre ingesta, validacion, analisis e informe con datos sinteticos.
+      # Si algo del pipeline se rompe, salta aqui sin depender de que Mister
+      # este en pie ni de tener credenciales.
+      - name: Humo del pipeline completo
+        run: node apps/scraper/src/main.ts --demo --dry-run
