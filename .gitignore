@@ -1,0 +1,36 @@
+# ---------------------------------------------------------------
+# CREDENCIALES — el repo es PUBLICO. Nada de esto puede subirse.
+# ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.env
+secrets/
+*.pem
+*.key
+cookies.json
+session.json
+storage-state.json
+.mister-session*
+.dev.vars
+
+# Dependencias / build
+node_modules/
+dist/
+build/
+.wrangler/
+*.tsbuildinfo
+coverage/
+
+# Datos crudos sin sanear (capturas de depuracion que pueden llevar
+# emails o cookies). Los snapshots saneados SI se versionan.
+data/**/raw/
+*.har
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log
