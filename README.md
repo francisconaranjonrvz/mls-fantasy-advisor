@@ -90,12 +90,27 @@ sabe hacer: interpretar noticias de lesiones, valorar rotaciones y explicar el p
 ```bash
 pnpm install
 pnpm test
-cp .env.example .env
-pnpm ingest:dry
+pnpm ingest:demo
 ```
 
-Las credenciales viven como **GitHub Actions secrets** en produccion y nunca se commitean:
-el repo es publico y `.gitignore` bloquea `.env`, cookies y sesiones.
+`pnpm ingest:demo` recorre el pipeline entero (ingesta, validacion, analisis e informe) con
+una liga sintetica, sin credenciales y sin llamar a Mister.
+
+Para conectarlo a tu liga de verdad y desplegar el dashboard, ver
+[docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
+
+Las credenciales viven como **GitHub Actions secrets** y la clave de IA como secreto del
+Worker. Nunca se commitean: el repo es publico y `.gitignore` bloquea `.env`, `.dev.vars`,
+cookies y sesiones.
+
+## Estado
+
+- Motor de dominio, cliente de Mister, ingesta, Worker y dashboard: **hechos**, con 111
+  tests.
+- Ingesta programada cuatro veces al dia en GitHub Actions: **hecha**.
+- Falta conectar las credenciales reales y lanzar la primera ingesta, y confirmar en la app
+  las cinco incognitas de [docs/INCOGNITAS.md](docs/INCOGNITAS.md), que estrechan
+  bastante las estimaciones de saldo.
 
 ## Reglas de la liga
 

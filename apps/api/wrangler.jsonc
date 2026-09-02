@@ -16,12 +16,18 @@
   "vars": {
     "AI_PROVIDER": "nvidia",
     "SEASON_ID": "2026-27"
-  },
-
-  // Respaldo si NVIDIA se queda sin creditos: 10.000 neuronas diarias gratis.
-  "ai": {
-    "binding": "AI"
   }
+
+  // El respaldo por Workers AI (10.000 neuronas diarias gratis) esta
+  // deliberadamente desactivado por defecto. Ese binding obliga a wrangler a
+  // abrir una conexion remota, asi que exige cuenta y token de Cloudflare
+  // incluso para `wrangler dev`, y eso rompe el desarrollo local de quien solo
+  // quiera tocar el codigo. Para activarlo, descomenta:
+  //
+  //   "ai": { "binding": "AI" }
+  //
+  // El codigo ya lo detecta solo: si el binding existe, entra en la cadena de
+  // proveedores detras de NVIDIA. Ver apps/api/src/providers.ts.
 
   // NVIDIA_API_KEY NO va aqui. Se define como secreto:
   //   npx wrangler secret put NVIDIA_API_KEY

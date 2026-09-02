@@ -63,8 +63,10 @@ PDF originales, y dentro de ellos manda el contrato sobre el reglamento.
   2,5x y 3,0x la base. Coste = 0,2 x base x numero de tramo.
 - **El tipo de cambio es constante: 0,40 EUR por cada euro de proteccion, en
   los tres tramos.** Ningun tramo es mas eficiente que otro.
-- Bajar una clausula devuelve el 50% de lo invertido, y bloquea volver a
-  subirla durante 48 horas.
+- Bajar una clausula devuelve el 50% de lo invertido. **Ojo con el bloqueo de
+  48 horas: se aplica solo despues de BAJAR una clausula, e impide volver a
+  subirla durante ese tiempo. Subir una clausula no bloquea nada** y se puede
+  seguir subiendo de tramo cuando se quiera.
 - Una clausula subida SUBE si el jugador se revaloriza, pero se CONGELA si se
   devalua. Solo compensa proteger a quien esperas que suba.
 - Blindaje de 7 dias para los recien fichados.
