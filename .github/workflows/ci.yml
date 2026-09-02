@@ -26,6 +26,7 @@ jobs:
         run: |
           pnpm exec tsc -b packages/core packages/engine packages/mister-client
           pnpm exec tsc -p apps/scraper/tsconfig.json
+          pnpm exec tsc -p apps/api/tsconfig.json
 
       - name: Tests
         run: pnpm exec vitest run

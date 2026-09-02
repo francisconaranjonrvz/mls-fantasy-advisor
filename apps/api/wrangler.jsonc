@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mls-fantasy-advisor",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // El dashboard compilado se sirve desde aqui. Las peticiones a ficheros
+  // estaticos son gratis e ilimitadas en Cloudflare: no consumen la cuota de
+  // 100.000 peticiones diarias, que solo gastan las que ejecutan el Worker.
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS"
+  },
+
+  "vars": {
+    "AI_PROVIDER": "nvidia",
+    "SEASON_ID": "2026-27"
+  },
+
+  // Respaldo si NVIDIA se queda sin creditos: 10.000 neuronas diarias gratis.
+  "ai": {
+    "binding": "AI"
+  }
+
+  // NVIDIA_API_KEY NO va aqui. Se define como secreto:
+  //   npx wrangler secret put NVIDIA_API_KEY
+  // De esa forma nunca entra en el repositorio, que es publico.
+}
