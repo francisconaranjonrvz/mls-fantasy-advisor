@@ -1,4 +1,4 @@
-import { MisterHttp, MisterHttpError } from './http.js'
+import { MisterHttp, MisterHttpError } from './http.ts'
 
 /**
  * Login en Mister.
@@ -33,9 +33,12 @@ export interface MisterSession {
 }
 
 export class MisterAuthError extends Error {
-  constructor(message: string, readonly detail?: unknown) {
+  readonly detail: unknown
+
+  constructor(message: string, detail?: unknown) {
     super(message)
     this.name = 'MisterAuthError'
+    this.detail = detail
   }
 }
 

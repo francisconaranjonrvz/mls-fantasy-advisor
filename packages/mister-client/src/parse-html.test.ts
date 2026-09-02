@@ -3,11 +3,11 @@ import {
   parsePlayerRows, parseMarket, parseStandingsMembers, parseBalanceHistory,
   parseReason, parseTransactionType, parseMisterDate, parseCurrentJornada,
   toTransactions,
-} from './parse-html.js'
-import { extractXAuth, extractLeagueId } from './auth.js'
+} from './parse-html.ts'
+import { extractXAuth, extractLeagueId } from './auth.ts'
 import {
   TEAM_HTML, MARKET_HTML, STANDINGS_HTML, BALANCE_HTML, MARKET_PAGE_WITH_AUTH,
-} from './__fixtures__/html.js'
+} from './__fixtures__/html.ts'
 
 describe('parsePlayerRows', () => {
   const players = parsePlayerRows(TEAM_HTML)

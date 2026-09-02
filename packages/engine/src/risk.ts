@@ -2,8 +2,8 @@ import type { Euros, OwnedPlayer, LeagueConfig } from '@mls/core'
 import {
   clauseBase, defaultClause, cheapestTierAbove, tierCost, clauseForTier,
   isShielded, CLAUSE_TIER_LABEL, type ClauseTier,
-} from './clauses.js'
-import { sportingValue, type ValuationContext } from './valuation.js'
+} from './clauses.ts'
+import { sportingValue, type ValuationContext } from './valuation.ts'
 
 /**
  * A quien subirle la clausula.

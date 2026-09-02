@@ -32,13 +32,16 @@ export const POLITE_THROTTLE: ThrottleOptions = { minDelayMs: 5_000, jitterMs: 7
 export const FAST_THROTTLE: ThrottleOptions = { minDelayMs: 400, jitterMs: 400 }
 
 export class MisterHttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly path: string,
-    readonly body: string,
-  ) {
+  readonly status: number
+  readonly path: string
+  readonly body: string
+
+  constructor(status: number, path: string, body: string) {
     super(`Mister respondio ${status} en ${path}: ${body.slice(0, 200)}`)
     this.name = 'MisterHttpError'
+    this.status = status
+    this.path = path
+    this.body = body
   }
 }
 
@@ -56,7 +59,11 @@ export class MisterHttp {
   xAuth: string | undefined
   leagueId: string | undefined
 
-  constructor(private readonly throttle: ThrottleOptions = POLITE_THROTTLE) {}
+  private readonly throttle: ThrottleOptions
+
+  constructor(throttle: ThrottleOptions = POLITE_THROTTLE) {
+    this.throttle = throttle
+  }
 
   get cookieHeader(): string {
     return [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ')

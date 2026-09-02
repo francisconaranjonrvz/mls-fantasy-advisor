@@ -1,5 +1,5 @@
 import type { Euros } from '@mls/core'
-import type { MisterHttp } from './http.js'
+import type { MisterHttp } from './http.ts'
 
 /**
  * Endpoints de lectura de Mister.
@@ -97,7 +97,11 @@ const toInt = (v: unknown): number => {
 }
 
 export class MisterEndpoints {
-  constructor(private readonly http: MisterHttp) {}
+  private readonly http: MisterHttp
+
+  constructor(http: MisterHttp) {
+    this.http = http
+  }
 
   /** Tu saldo. Mister no expone el de los rivales: hay que reconstruirlo. */
   async getBalance(): Promise<BalanceInfo> {

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { M, MLS_LEAGUE, type OwnedPlayer, type Player } from '@mls/core'
-import { buildValuationContext, sportingValue, derivePricePerPoint } from './valuation.js'
-import { assessPlayerThreat, assessSquad, planProtection, type RivalCapacity } from './risk.js'
-import { evaluateRaid, findRaidTargets, planRaids, findDeadweight, isClauseWindowClosed } from './raids.js'
+import { buildValuationContext, sportingValue, derivePricePerPoint } from './valuation.ts'
+import { assessPlayerThreat, assessSquad, planProtection, type RivalCapacity } from './risk.ts'
+import { evaluateRaid, findRaidTargets, planRaids, findDeadweight, isClauseWindowClosed } from './raids.ts'
 
 const NOW = new Date('2026-09-20T12:00:00Z')
 

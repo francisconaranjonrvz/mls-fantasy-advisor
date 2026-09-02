@@ -4,7 +4,7 @@ import {
   clauseBase, defaultClause, clauseForTier, tierCost, upgradeCost,
   cheapestTierAbove, effectiveClause, refundOnLowering,
   CLAUSE_EXCHANGE_RATE, CLAUSE_FLOOR, CLAUSE_TIERS,
-} from './clauses.js'
+} from './clauses.ts'
 
 describe('ejemplo oficial de Mister', () => {
   // help.playmister.com/article/86: un jugador comprado por 10M tiene

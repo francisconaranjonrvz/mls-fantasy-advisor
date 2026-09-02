@@ -1,6 +1,6 @@
 import type { Euros, OwnedPlayer, LeagueConfig } from '@mls/core'
-import { clauseBase, defaultClause, isShielded } from './clauses.js'
-import { sportingValue, valueRatio, type ValuationContext } from './valuation.js'
+import { clauseBase, defaultClause, isShielded } from './clauses.ts'
+import { sportingValue, valueRatio, type ValuationContext } from './valuation.ts'
 
 /**
  * Busqueda de clausulazos.

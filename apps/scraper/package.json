@@ -1,0 +1,15 @@
+{
+  "name": "@mls/scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mls/core": "workspace:*",
+    "@mls/engine": "workspace:*",
+    "@mls/mister-client": "workspace:*"
+  }
+}

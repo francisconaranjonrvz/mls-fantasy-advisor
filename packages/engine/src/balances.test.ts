@@ -3,7 +3,7 @@ import { M, MLS_LEAGUE, type Transaction, type LeagueConfig } from '@mls/core'
 import {
   reconstructBalance, bonusesFromRanks, quinielaRange, salaryRange,
   calibrate, exactBalance, spendingCapacity,
-} from './balances.js'
+} from './balances.ts'
 
 const tx = (
   type: Transaction['type'],

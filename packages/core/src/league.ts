@@ -1,4 +1,4 @@
-import { M, type Euros } from './money.js'
+import { M, type Euros } from './money.ts'
 
 /**
  * Configuracion de la liga MLS (Malos Ligando Siempre), temporada 26-27.

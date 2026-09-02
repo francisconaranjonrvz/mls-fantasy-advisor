@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Asesor automatico para la liga fantasy Mister MLS (Malos Ligando Siempre) 26-27",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "pnpm -r --filter './packages/**' build",
     "test": "vitest run",
@@ -12,7 +14,8 @@
     "typecheck": "tsc -b --pretty",
     "lint": "eslint .",
     "ingest": "pnpm --filter @mls/scraper start",
-    "ingest:dry": "pnpm --filter @mls/scraper start -- --dry-run"
+    "ingest:dry": "pnpm --filter @mls/scraper start -- --dry-run",
+    "ingest:demo": "pnpm --filter @mls/scraper start -- --demo --dry-run"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

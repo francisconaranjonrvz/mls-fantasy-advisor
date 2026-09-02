@@ -1,4 +1,4 @@
-import type { Euros } from './money.js'
+import type { Euros } from './money.ts'
 
 export type Position = 'GK' | 'DF' | 'MF' | 'FW'
 
