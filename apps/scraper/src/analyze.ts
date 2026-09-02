@@ -47,6 +47,12 @@ export interface Diagnosis {
   /** Contraste de la reconstruccion contra tu saldo real. */
   calibration: Calibration | null
   threats: ThreatAssessment[]
+  /**
+   * Jugadores que nadie puede robarte con seguridad, pero cuya seguridad
+   * tampoco esta confirmada porque no conocemos el saldo exacto de los
+   * rivales. Se cuentan aparte para no confundir riesgo con desconocimiento.
+   */
+  uncertainCount: number
   protection: { plan: ThreatAssessment[]; totalCost: Euros; remaining: Euros }
   raids: RaidTarget[]
   raidPlan: { plan: RaidTarget[]; totalCost: Euros; remainingCapacity: Euros }
@@ -154,11 +160,18 @@ export function analyze(
     }
   }
 
-  const rivalCapacities: RivalCapacity[] = rivals.map((r) => ({
-    managerId: r.managerId,
-    name: r.name,
-    capacity: r.threatCapacity,
-  }))
+  const rivalCapacities: RivalCapacity[] = rivalsRaw.map((m) => {
+    const view = rivals.find((r) => r.managerId === m.id)!
+    return {
+      managerId: m.id,
+      name: m.name,
+      // Cota superior: lo maximo que podria gastar. Mide la amenaza.
+      capacity: view.threatCapacity,
+      // Cota inferior: lo que con seguridad puede gastar. Separa la amenaza
+      // real de la mera falta de informacion.
+      capacityLow: spendingCapacity(view.balance, m.teamValue, config, 'best'),
+    }
+  })
 
   const threats = self ? assessSquad(self.squad, rivalCapacities, valuation, config, now) : []
 
@@ -224,6 +237,7 @@ export function analyze(
     rivals: rivals.sort((a, b) => b.threatCapacity - a.threatCapacity),
     calibration,
     threats: threats.filter((t) => t.risk !== 'ninguno' || t.advice.action === 'cebo'),
+    uncertainCount: threats.filter((t) => t.advice.action === 'incierto').length,
     protection,
     raids: raids.filter((r) => r.viable).slice(0, 15),
     raidPlan,

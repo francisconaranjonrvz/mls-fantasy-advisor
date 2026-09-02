@@ -96,6 +96,16 @@ export function renderDiagnosis(d: Diagnosis): string {
     }
   }
 
+  if (d.uncertainCount > 0) {
+    L.push(
+      `> Otros ${d.uncertainCount} jugadores tuyos no estan confirmados como seguros, pero ` +
+      'tampoco hay constancia de que nadie pueda pagarles la clausula. Esa duda viene de que ' +
+      'Mister oculta el saldo ajeno, no de una amenaza real, y se estrecha en cuanto la ' +
+      'ingesta capture el feed de movimientos de los rivales.',
+    )
+    L.push('')
+  }
+
   if (cebos.length > 0) {
     L.push('### Cebos: dejalos sin proteger a proposito')
     L.push('')

@@ -31,6 +31,9 @@ jobs:
       - name: Tests
         run: pnpm exec vitest run
 
+      - name: Compilar el dashboard
+        run: pnpm --filter @mls/web build
+
       # Recorre ingesta, validacion, analisis e informe con datos sinteticos.
       # Si algo del pipeline se rompe, salta aqui sin depender de que Mister
       # este en pie ni de tener credenciales.

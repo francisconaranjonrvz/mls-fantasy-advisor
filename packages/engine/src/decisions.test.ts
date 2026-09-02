@@ -77,7 +77,7 @@ describe('a quien subirle la clausula', () => {
     const chollo = owned({ id: 2, name: 'Chollo', value: M(8), points: 40, purchasePrice: M(8) })
     const a = assessPlayerThreat(chollo, rivals, CTX, MLS_LEAGUE, NOW)
     expect(a.advice.action).toBe('imposible')
-    expect(a.advice.rationale).toMatch(/no sirve de nada/)
+    expect(a.advice.rationale).toMatch(/No hay proteccion posible/)
   })
 
   it('no gasta si la clausula por defecto ya basta', () => {
@@ -232,5 +232,119 @@ describe('lastre a vender', () => {
   it('no senala a un rendimiento normal', () => {
     const squad = [owned({ id: 3, name: 'Normal', value: M(10), points: 10 })]
     expect(findDeadweight(squad, CTX)).toHaveLength(0)
+  })
+})
+
+describe('amenaza cierta frente a falta de informacion', () => {
+  // Base 8M => clausula por defecto 12M.
+  const chollo = () => owned({ id: 50, name: 'Chollo', value: M(8), points: 40, purchasePrice: M(8) })
+
+  it('si la cota INFERIOR del rival ya paga la clausula, la amenaza es real', () => {
+    const rivals: RivalCapacity[] = [
+      { managerId: 2, name: 'Paquito', capacity: M(20), capacityLow: M(14) },
+    ]
+    const a = assessPlayerThreat(chollo(), rivals, CTX, MLS_LEAGUE, NOW)
+    expect(a.threats).toHaveLength(1)
+    expect(a.possibleThreats).toHaveLength(0)
+    expect(a.advice.action).toBe('subir')
+  })
+
+  it('si solo llega en su escenario mas rico, es incertidumbre y no amenaza', () => {
+    const rivals: RivalCapacity[] = [
+      { managerId: 2, name: 'Paquito', capacity: M(20), capacityLow: M(4) },
+    ]
+    const a = assessPlayerThreat(chollo(), rivals, CTX, MLS_LEAGUE, NOW)
+    expect(a.threats).toHaveLength(0)
+    expect(a.possibleThreats).toHaveLength(1)
+    expect(a.advice.action).toBe('incierto')
+    expect(a.advice.rationale).toMatch(/oculta el saldo ajeno/)
+  })
+
+  it('no gasta en proteger contra una sombra: sin amenaza cierta no hay perdida esperada', () => {
+    const rivals: RivalCapacity[] = [
+      { managerId: 2, name: 'Paquito', capacity: M(20), capacityLow: M(4) },
+      { managerId: 3, name: 'Olivito', capacity: M(19), capacityLow: M(3) },
+    ]
+    const a = assessPlayerThreat(chollo(), rivals, CTX, MLS_LEAGUE, NOW)
+    expect(a.expectedLoss).toBe(0)
+    const { plan } = planProtection([a], M(10))
+    expect(plan).toHaveLength(0)
+  })
+
+  it('sin capacityLow se comporta como antes, tratando la cota superior como cierta', () => {
+    const rivals: RivalCapacity[] = [{ managerId: 2, name: 'Paquito', capacity: M(14) }]
+    const a = assessPlayerThreat(chollo(), rivals, CTX, MLS_LEAGUE, NOW)
+    expect(a.threats).toHaveLength(1)
+    expect(a.advice.action).toBe('subir')
+  })
+
+  it('con un rival cierto y otro incierto, manda el cierto', () => {
+    const rivals: RivalCapacity[] = [
+      { managerId: 2, name: 'Cierto', capacity: M(14), capacityLow: M(13) },
+      { managerId: 3, name: 'Incierto', capacity: M(30), capacityLow: M(2) },
+    ]
+    const a = assessPlayerThreat(chollo(), rivals, CTX, MLS_LEAGUE, NOW)
+    expect(a.threats.map((t) => t.name)).toEqual(['Cierto'])
+    expect(a.possibleThreats.map((t) => t.name)).toEqual(['Incierto'])
+    expect(a.advice.action).toBe('subir')
+  })
+})
+
+describe('proteger quitando el incentivo, no la capacidad', () => {
+  /**
+   * El hallazgo que motivo este criterio: con el margen de deuda del 25%, un
+   * rival con equipo de 120M tiene 30M de capacidad aunque este a cero de
+   * saldo. Perseguir esa cifra con la clausula es carisimo o imposible. Lo que
+   * si funciona es dejar la clausula por encima de lo que el jugador rinde,
+   * porque nadie roba a perdida.
+   */
+  const rico: RivalCapacity[] = [
+    { managerId: 2, name: 'Rico', capacity: M(60), capacityLow: M(45) },
+  ]
+
+  it('sube solo lo justo para que el robo deje de compensar, sin perseguir el saldo del rival', () => {
+    // Base 6M => clausula por defecto 9M, tramos 12 / 15 / 18M.
+    // 6 puntos en 10 jornadas => 0,6/jornada => 16,8 pts restantes => 16,8M.
+    // El tramo 3 (18M) es el primero que supera esos 16,8M de valor deportivo.
+    const varios: RivalCapacity[] = [
+      { managerId: 2, name: 'Rico', capacity: M(60), capacityLow: M(45) },
+      { managerId: 3, name: 'Rico2', capacity: M(55), capacityLow: M(40) },
+      { managerId: 4, name: 'Rico3', capacity: M(50), capacityLow: M(35) },
+    ]
+    const jugador = owned({ id: 60, name: 'Bueno', value: M(6), points: 6, purchasePrice: M(6) })
+    const a = assessPlayerThreat(jugador, varios, CTX, MLS_LEAGUE, NOW)
+
+    expect(a.sportingValue).toBeGreaterThan(a.clause)
+    expect(a.advice.action).toBe('subir')
+    // El tramo elegido deja la clausula por encima del valor deportivo...
+    expect(a.advice.newClause!).toBeGreaterThan(a.sportingValue)
+    // ...y muy por debajo de los 60M que el rival mas rico podria pagar.
+    expect(a.advice.newClause!).toBeLessThan(M(60))
+    expect(a.advice.rationale).toMatch(/deja de salirle a cuenta/)
+  })
+
+  it('no gasta cuando proteger cuesta mas que la perdida esperada', () => {
+    // Mismo jugador pero con un solo rival: menos presion, menos perdida
+    // esperada, y entonces los 4M del tramo no salen a cuenta.
+    const uno: RivalCapacity[] = [{ managerId: 2, name: 'Rico', capacity: M(60), capacityLow: M(45) }]
+    const jugador = owned({ id: 63, name: 'Bueno', value: M(10), points: 8, purchasePrice: M(10) })
+    const a = assessPlayerThreat(jugador, uno, CTX, MLS_LEAGUE, NOW)
+    expect(a.advice.action).toBe('nada')
+    expect(a.advice.cost).toBeGreaterThan(a.expectedLoss)
+    expect(a.advice.rationale).toMatch(/cuesta mas que la perdida esperada/)
+  })
+
+  it('no hace nada si la clausula por defecto ya supera lo que rinde', () => {
+    const flojo = owned({ id: 61, name: 'Flojo', value: M(10), points: 2, purchasePrice: M(10) })
+    const a = assessPlayerThreat(flojo, rico, CTX, MLS_LEAGUE, NOW)
+    expect(a.advice.action).toBe('cebo')
+  })
+
+  it('solo declara imposible cuando ni quitando el incentivo ni el alcance hay salida', () => {
+    // Rinde tantisimo que ni 3x su base cubre su valor deportivo.
+    const crack = owned({ id: 62, name: 'Crack', value: M(5), points: 60, purchasePrice: M(5) })
+    const a = assessPlayerThreat(crack, rico, CTX, MLS_LEAGUE, NOW)
+    expect(a.advice.action).toBe('imposible')
+    expect(a.advice.rationale).toMatch(/vendes tu/)
   })
 })
