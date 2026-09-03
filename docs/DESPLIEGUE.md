@@ -3,19 +3,69 @@
 Tres pasos: credenciales, primera ingesta y despliegue del dashboard. Todo el
 stack es gratuito y no requiere tarjeta.
 
-## 1. Credenciales (GitHub)
+## 1. Acceso a Mister
 
-En `Settings > Secrets and variables > Actions > New repository secret`:
+Aqui hay una bifurcacion segun como entres en Mister.
 
-| Secret | Valor |
+### Si entras con "Continuar con Google" (lo habitual)
+
+Tu cuenta **no tiene contrasena nativa** de Mister, asi que el login por API es
+imposible. La solucion es capturar la sesion una vez desde un navegador real,
+donde el OAuth de Google funciona con normalidad.
+
+```bash
+pnpm --filter @mls/scraper exec playwright install chromium   # solo la primera vez
+pnpm capture:session
+```
+
+Se abre un navegador. Inicia sesion como haces siempre, espera a ver tu liga con
+el menu Mercado / Equipo / Tabla, y vuelve a la terminal a pulsar Enter.
+
+El script **comprueba la sesion contra Mister antes de dartela**: si te imprime
+un valor, es porque ya ha leido tu saldo con ella. Copia ese valor en el secret
+`MISTER_SESSION`.
+
+> Automatizar el login de Google desde el script seria mala idea por dos motivos
+> independientes: Google detecta y bloquea navegadores automatizados, y meter las
+> credenciales de tu cuenta de Google entera en un script para leer una liga de
+> fantasy es un riesgo desproporcionado. Aqui el navegador lo conduces tu.
+
+#### Captura manual, sin Playwright
+
+Si prefieres no instalar nada:
+
+1. Entra en `mister.mundodeportivo.com` en Chrome y ve a tu liga.
+2. Abre DevTools con F12 y ve a `Application > Cookies > https://mister.mundodeportivo.com`.
+3. Copia el **valor** de la cookie `refresh-token` (es un texto largo que empieza por `ey`).
+4. Pegalo tal cual en el secret `MISTER_SESSION`.
+
+El scraper acepta ese valor suelto, una cabecera `Cookie` completa, o el JSON
+del capturador. No hace falta darle un formato concreto.
+
+### Si tu cuenta tiene contrasena propia de Mister
+
+Merece la pena comprobarlo aunque entres con Google: en la pantalla de acceso,
+escribe tu email y pulsa "Recuperar contrasena". Si te llega el correo, podras
+fijar una contrasena y usar la via simple, que no caduca nunca.
+
+En ese caso, en vez de `MISTER_SESSION` define `MISTER_EMAIL` y `MISTER_PASSWORD`.
+No es la contrasena de tu cuenta de Google: es una contrasena de Mister.
+
+### Donde van los secrets
+
+`Settings > Secrets and variables > Actions`, pestana **Secrets**, boton
+**New repository secret** (repository secrets, no environment secrets: los
+workflows no declaran ningun environment).
+
+| Secret | Cuando |
 |---|---|
-| `MISTER_EMAIL` | El correo de tu cuenta de Mister |
-| `MISTER_PASSWORD` | Su contraseña |
-| `MISTER_LEAGUE_ID` | Opcional. Si lo dejas vacio, el scraper lo detecta solo |
+| `MISTER_SESSION` | Si entras con Google |
+| `MISTER_EMAIL` + `MISTER_PASSWORD` | Si tienes contrasena nativa |
+| `MISTER_LEAGUE_ID` | Opcional; si lo dejas vacio se detecta solo |
 
 Los secrets no se pasan a los workflows que vienen de un fork, asi que el
-repositorio puede ser publico sin riesgo. Nunca escribas estos valores en un
-fichero del repositorio.
+repositorio puede ser publico sin riesgo. Trata `MISTER_SESSION` como una
+contrasena: da acceso a tu cuenta.
 
 ## 2. Primera ingesta
 

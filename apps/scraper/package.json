@@ -5,11 +5,15 @@
   "type": "module",
   "scripts": {
     "start": "node src/main.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "capture:session": "node src/capture-session.ts"
   },
   "dependencies": {
     "@mls/core": "workspace:*",
     "@mls/engine": "workspace:*",
     "@mls/mister-client": "workspace:*"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
   }
 }

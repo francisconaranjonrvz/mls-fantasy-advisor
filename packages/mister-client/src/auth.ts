@@ -1,4 +1,5 @@
 import { MisterHttp, MisterHttpError } from './http.ts'
+import { parseSessionInput } from './session.ts'
 
 /**
  * Login en Mister.
@@ -112,4 +113,120 @@ export async function login(
   if (leagueId) http.leagueId = leagueId
 
   return { http, session: { cookies: http.cookieHeader, xAuth, leagueId } }
+}
+
+// ---------------------------------------------------------------------------
+// Autenticacion por sesion capturada
+// ---------------------------------------------------------------------------
+
+/**
+ * Senales de que Mister nos ha devuelto la pantalla de acceso en lugar de la
+ * aplicacion. Se comprueban sobre el HTML porque el servidor responde 200
+ * igualmente: no hay un 401 limpio que distinguir.
+ */
+const LOGIN_PAGE_MARKERS = [
+  'new-onboarding/auth',
+  'Continuar con Google',
+  'Continue with Google',
+  'id="login',
+  'action="/login',
+]
+
+export class MisterSessionExpiredError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MisterSessionExpiredError'
+  }
+}
+
+function looksLikeLoginPage(html: string): boolean {
+  return LOGIN_PAGE_MARKERS.some((m) => html.includes(m))
+}
+
+/**
+ * Restaura una sesion capturada de un navegador.
+ *
+ * No hace falta conocer el endpoint de refresco: basta con enviar las cookies
+ * y pedir una pagina. Si el 'refresh-token' sigue siendo valido, el servidor
+ * responde con un Set-Cookie que renueva el 'token' de vida corta, y MisterHttp
+ * lo absorbe solo. Si no lo es, nos devuelve la pantalla de acceso, y eso es lo
+ * que detectamos aqui.
+ */
+export async function restoreSession(
+  cookies: Map<string, string>,
+  http: MisterHttp = new MisterHttp(),
+): Promise<{ http: MisterHttp; session: MisterSession }> {
+  if (cookies.size === 0) {
+    throw new MisterAuthError('La sesion capturada no contiene ninguna cookie')
+  }
+  if (!cookies.has('refresh-token')) {
+    throw new MisterAuthError(
+      'Falta la cookie refresh-token, que es la unica de larga duracion. Sin ella la sesion ' +
+        'caduca en unos minutos. Vuelve a capturarla estando dentro de la liga.',
+    )
+  }
+
+  for (const [name, value] of cookies) http.setCookie(name, value)
+
+  // Esta peticion hace tres cosas a la vez: valida la sesion, dispara la
+  // renovacion del token corto por Set-Cookie, y trae el HTML del que se
+  // raspa el X-Auth.
+  const html = await http.fetchPage('/market')
+
+  if (looksLikeLoginPage(html)) {
+    throw new MisterSessionExpiredError(
+      'Mister devolvio la pantalla de acceso: la sesion capturada ya no vale. ' +
+        'Vuelve a capturarla con "pnpm capture:session" y actualiza el secret MISTER_SESSION.',
+    )
+  }
+
+  const xAuth = extractXAuth(html)
+  if (!xAuth) {
+    throw new MisterSessionExpiredError(
+      'La sesion parece viva pero no se encontro el token X-Auth en el HTML. O la sesion esta ' +
+        'a medias, o Mister ha cambiado donde incrusta ese token. Prueba a recapturar; si el ' +
+        'problema persiste, hay que revisar extractXAuth.',
+    )
+  }
+  http.xAuth = xAuth
+
+  const leagueId = extractLeagueId(html) ?? undefined
+  if (leagueId) http.leagueId = leagueId
+
+  return { http, session: { cookies: http.cookieHeader, xAuth, leagueId } }
+}
+
+export interface AuthConfig {
+  /** Sesion capturada del navegador. Es la via para cuentas de Google. */
+  session?: string | undefined
+  /** Credenciales nativas de Mister. Solo si la cuenta tiene contrasena propia. */
+  email?: string | undefined
+  password?: string | undefined
+}
+
+/**
+ * Autentica por el metodo que este disponible.
+ *
+ * Se intenta primero la sesion capturada porque es la unica que funciona con
+ * cuentas creadas por OAuth de Google, que es el caso mas restrictivo.
+ */
+export async function authenticate(
+  config: AuthConfig,
+  http: MisterHttp = new MisterHttp(),
+): Promise<{ http: MisterHttp; session: MisterSession; method: 'sesion' | 'credenciales' }> {
+  if (config.session) {
+    const { session } = await restoreSession(parseSessionInput(config.session), http)
+    return { http, session, method: 'sesion' }
+  }
+
+  if (config.email && config.password) {
+    const { session } = await login({ email: config.email, password: config.password }, http)
+    return { http, session, method: 'credenciales' }
+  }
+
+  throw new MisterAuthError(
+    'No hay forma de autenticarse. Define MISTER_SESSION con una sesion capturada del ' +
+      'navegador (necesario si entras en Mister con Google), o MISTER_EMAIL y MISTER_PASSWORD ' +
+      'si tu cuenta tiene contrasena propia de Mister. Ver docs/DESPLIEGUE.md.',
+  )
 }

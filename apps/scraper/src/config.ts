@@ -8,6 +8,11 @@ import { readFileSync, existsSync } from 'node:fs'
  */
 
 export interface ScraperConfig {
+  /**
+   * Sesion capturada del navegador. Es la unica via para cuentas que entran
+   * con Google, porque esas no tienen contrasena nativa de Mister.
+   */
+  session: string
   email: string
   password: string
   leagueId?: string | undefined
@@ -40,18 +45,30 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): ScraperConfi
   // En modo demo no se llama a Mister, asi que no hacen falta credenciales.
   const demo = argv.includes('--demo')
 
+  const session = process.env['MISTER_SESSION'] ?? ''
   const email = process.env['MISTER_EMAIL'] ?? ''
   const password = process.env['MISTER_PASSWORD'] ?? ''
 
-  if (!dryRun && !demo && (!email || !password)) {
+  if (!dryRun && !demo && !session && !(email && password)) {
     throw new Error(
-      'Faltan MISTER_EMAIL y MISTER_PASSWORD.\n' +
-        'En local: copia .env.example a .env y rellenalos.\n' +
-        'En CI: anadelos como secrets del repositorio (Settings > Secrets and variables > Actions).',
+      [
+        'No hay forma de autenticarse en Mister.',
+        '',
+        'Si entras en Mister con Google (lo habitual), necesitas MISTER_SESSION:',
+        '  1. pnpm capture:session',
+        '  2. inicia sesion en la ventana que se abre',
+        '  3. pega el valor que imprime en el secret MISTER_SESSION',
+        '',
+        'Si tu cuenta tiene contrasena propia de Mister, valen MISTER_EMAIL y MISTER_PASSWORD.',
+        '',
+        'En local van en .env; en CI, como secrets del repositorio',
+        '(Settings > Secrets and variables > Actions > Repository secrets).',
+      ].join(String.fromCharCode(10)),
     )
   }
 
   return {
+    session,
     email,
     password,
     leagueId: process.env['MISTER_LEAGUE_ID'] || undefined,

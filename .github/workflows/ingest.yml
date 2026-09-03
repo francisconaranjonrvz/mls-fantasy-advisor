@@ -48,6 +48,11 @@ jobs:
 
       - name: Ingerir y analizar
         env:
+          # Via principal: sesion capturada del navegador. Es la unica que
+          # funciona con cuentas que entran con Google, que no tienen
+          # contrasena nativa de Mister.
+          MISTER_SESSION: ${{ secrets.MISTER_SESSION }}
+          # Alternativa, solo si la cuenta tiene contrasena propia de Mister.
           MISTER_EMAIL: ${{ secrets.MISTER_EMAIL }}
           MISTER_PASSWORD: ${{ secrets.MISTER_PASSWORD }}
           MISTER_LEAGUE_ID: ${{ secrets.MISTER_LEAGUE_ID }}

@@ -1,5 +1,5 @@
 import {
-  MisterHttp, MisterEndpoints, login, parsePlayerRows, parseSquad, parseMarket,
+  MisterHttp, MisterEndpoints, authenticate, parsePlayerRows, parseSquad, parseMarket,
   parseStandingsMembers, parseCurrentJornada, parseBalanceHistory, toTransactions,
   readClause, readPurchasePrice,
 } from '@mls/mister-client'
@@ -39,9 +39,12 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   const http = new MisterHttp({ minDelayMs: config.throttleMs, jitterMs: config.throttleMs })
 
   log('autenticando...')
-  await login({ email: config.email, password: config.password }, http)
+  const { method } = await authenticate(
+    { session: config.session, email: config.email, password: config.password },
+    http,
+  )
   if (config.leagueId) http.leagueId = config.leagueId
-  log(`sesion lista (liga ${http.leagueId ?? 'auto'})`)
+  log(`autenticado por ${method} (liga ${http.leagueId ?? 'auto'})`)
 
   const api = new MisterEndpoints(http)
 

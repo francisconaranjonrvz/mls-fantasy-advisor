@@ -99,16 +99,23 @@ una liga sintetica, sin credenciales y sin llamar a Mister.
 Para conectarlo a tu liga de verdad y desplegar el dashboard, ver
 [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
 
+### Acceso a Mister
+
+Quien entra en Mister con "Continuar con Google" no tiene contrasena nativa, asi que el
+login por API no le sirve. Para ese caso, `pnpm capture:session` abre un navegador, te deja
+entrar a mano y guarda la sesion resultante, que es lo que usa el scraper. El script valida
+la sesion contra Mister antes de dartela, para que no descubras dos dias despues que no
+valia. Detalles en [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
+
 Las credenciales viven como **GitHub Actions secrets** y la clave de IA como secreto del
 Worker. Nunca se commitean: el repo es publico y `.gitignore` bloquea `.env`, `.dev.vars`,
 cookies y sesiones.
 
 ## Estado
 
-- Motor de dominio, cliente de Mister, ingesta, Worker y dashboard: **hechos**, con 111
-  tests.
+- Motor de dominio, cliente de Mister, ingesta, Worker y dashboard: **hechos**, con 128 tests.
 - Ingesta programada cuatro veces al dia en GitHub Actions: **hecha**.
-- Falta conectar las credenciales reales y lanzar la primera ingesta, y confirmar en la app
+- Falta capturar la sesion de Mister y lanzar la primera ingesta, y confirmar en la app
   las cinco incognitas de [docs/INCOGNITAS.md](docs/INCOGNITAS.md), que estrechan
   bastante las estimaciones de saldo.
 

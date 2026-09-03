@@ -8,6 +8,7 @@ import {
   seasonPaths, writeJson, writeText, appendCsv, appendCsvDeduped, countCsvRows, readJson,
 } from './storage.ts'
 import { buildDemoSnapshot } from './demo.ts'
+import { MisterSessionExpiredError } from '@mls/mister-client'
 
 /**
  * Punto de entrada de la ingesta diaria.
@@ -135,6 +136,24 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
+  // Una sesion caducada no es un fallo cualquiera: es lo unico que exige una
+  // accion concreta del usuario, asi que se distingue del resto de errores en
+  // lugar de esconderla dentro de un volcado de pila.
+  if (err instanceof MisterSessionExpiredError) {
+    console.error('')
+    console.error('='.repeat(70))
+    console.error('LA SESION DE MISTER HA CADUCADO')
+    console.error('='.repeat(70))
+    console.error(err.message)
+    console.error('')
+    console.error('Para arreglarlo:')
+    console.error('  1. pnpm capture:session')
+    console.error('  2. actualiza el secret MISTER_SESSION con el valor que imprime')
+    console.error('  3. relanza el workflow "Ingesta diaria"')
+    console.error('='.repeat(70))
+    process.exitCode = 1
+    return
+  }
   console.error('[main] la ingesta fallo:', err)
   process.exitCode = 1
 })

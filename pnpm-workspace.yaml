@@ -5,3 +5,8 @@ packages:
 allowBuilds:
   esbuild: true
   workerd: true
+  # Playwright solo hace falta en local, para capturar la sesion una vez. Se
+  # deniega su postinstall a proposito para que CI no descargue navegadores
+  # (cientos de MB) en cada ejecucion. En local se instala el navegador con:
+  #   pnpm --filter @mls/scraper exec playwright install chromium
+  playwright: false

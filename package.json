@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "ingest": "pnpm --filter @mls/scraper start",
     "ingest:dry": "pnpm --filter @mls/scraper start -- --dry-run",
-    "ingest:demo": "pnpm --filter @mls/scraper start -- --demo --dry-run"
+    "ingest:demo": "pnpm --filter @mls/scraper start -- --demo --dry-run",
+    "capture:session": "pnpm --filter @mls/scraper capture:session"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
