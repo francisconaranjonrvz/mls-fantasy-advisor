@@ -4,9 +4,18 @@ import {
   refreshTokenExpiry, describeSession, SessionFormatError, ESSENTIAL_COOKIE,
 } from './session.ts'
 
-/** JWT con la forma real pero inofensivo: payload {"exp":4890499200}, que cae en 2124. */
-const FAKE_JWT =
-  'eyJhbGciOiJFUzI1NiJ9.eyJleHAiOjQ4OTA0OTkyMDAsInVzZXJpZCI6MTIzNH0.ZmFrZXNpZ25hdHVyZQ'
+/**
+ * JWT con el formato REAL de Mister, que emite todos los campos del payload
+ * como CADENA: {"exp":"4913902471","id_token_lifetime_in_min":"5"}.
+ *
+ * El fixture anterior usaba exp numerico y por eso los tests pasaban en verde
+ * mientras refreshTokenExpiry() devolvia null contra cualquier token de
+ * verdad. Un fixture que no se parece al dato real no prueba nada.
+ */
+const FAKE_JWT = 'eyJhbGciOiAiRVMyNTYifQ.eyJleHAiOiAiNDkxMzkwMjQ3MSIsICJyZWZyZXNoIjogIm1QZ0pQVzNtWGJFcHp0UjY5U0VNcyIsICJpZF90b2tlbl9saWZldGltZV9pbl9taW4iOiAiNSJ9.ZmFrZXNpZ25hdHVyZQ'
+
+/** Variante con exp numerico, para que la funcion tolere ambas formas. */
+const FAKE_JWT_EXP_NUMERICO = 'eyJhbGciOiAiRVMyNTYifQ.eyJleHAiOiA0OTEzOTAyNDcxfQ.ZmFrZXNpZ25hdHVyZQ'
 
 const STORAGE_STATE = {
   cookies: [
@@ -79,7 +88,15 @@ describe('vencimiento del refresh-token', () => {
     const cookies = new Map([[ESSENTIAL_COOKIE, FAKE_JWT]])
     const exp = refreshTokenExpiry(cookies)
     expect(exp).toBeInstanceOf(Date)
-    expect(exp!.getUTCFullYear()).toBe(2124)
+    expect(exp!.getUTCFullYear()).toBe(2125)
+  })
+
+  it('acepta el exp venga como cadena (formato real) o como numero', () => {
+    const desdeCadena = refreshTokenExpiry(new Map([[ESSENTIAL_COOKIE, FAKE_JWT]]))
+    const desdeNumero = refreshTokenExpiry(new Map([[ESSENTIAL_COOKIE, FAKE_JWT_EXP_NUMERICO]]))
+    expect(desdeCadena).not.toBeNull()
+    expect(desdeNumero).not.toBeNull()
+    expect(desdeCadena!.getTime()).toBe(desdeNumero!.getTime())
   })
 
   it('confirma lo que importa: el refresh-token es practicamente permanente', () => {

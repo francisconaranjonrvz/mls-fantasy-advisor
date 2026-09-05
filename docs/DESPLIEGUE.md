@@ -5,7 +5,20 @@ stack es gratuito y no requiere tarjeta.
 
 ## 1. Acceso a Mister
 
-Aqui hay una bifurcacion segun como entres en Mister.
+### Antes de nada: comprueba que admite tu cuenta
+
+Mister expone un endpoint publico que dice exactamente que metodos de acceso
+admite un email. No tiene efectos secundarios y resuelve la duda en un segundo:
+
+```bash
+curl "https://mister.mundodeportivo.com/api2/users/auth-methods?email=TU_EMAIL"
+```
+
+- Si responde `{"supportedAuthMethods":["email"]}`, tu cuenta admite contrasena:
+  ve a la seccion de credenciales nativas, que es la via mas simple.
+- Si responde con `"google"` y sin `"email"`, solo puedes entrar por OAuth: ve a
+  la captura de sesion.
+- Si responde `404`, ese email no esta registrado en Mister.
 
 ### Si entras con "Continuar con Google" (lo habitual)
 

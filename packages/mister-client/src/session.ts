@@ -162,8 +162,11 @@ export function refreshTokenExpiry(cookies: Map<string, string>): Date | null {
   if (!payload) return null
   try {
     const json = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
-    const exp = (JSON.parse(json) as { exp?: number }).exp
-    return typeof exp === 'number' ? new Date(exp * 1000) : null
+    // Mister emite TODOS los campos del payload como cadena, incluido exp
+    // ("4913902471"). Comprobar typeof === 'number' devolvia null con
+    // cualquier token real, y el aviso de caducidad no se imprimia jamas.
+    const exp = Number((JSON.parse(json) as { exp?: unknown }).exp)
+    return Number.isFinite(exp) && exp > 0 ? new Date(exp * 1000) : null
   } catch {
     return null
   }

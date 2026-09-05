@@ -1,4 +1,4 @@
-import { MisterHttp, MisterHttpError } from './http.ts'
+import { MisterHttp, MisterHttpError, MisterSessionExpiredError } from './http.ts'
 import { parseSessionInput } from './session.ts'
 
 /**
@@ -120,24 +120,19 @@ export async function login(
 // ---------------------------------------------------------------------------
 
 /**
- * Senales de que Mister nos ha devuelto la pantalla de acceso en lugar de la
- * aplicacion. Se comprueban sobre el HTML porque el servidor responde 200
- * igualmente: no hay un 401 limpio que distinguir.
+ * Senales de que Mister ha devuelto la pantalla de acceso en lugar de la
+ * aplicacion.
+ *
+ * Es una red secundaria: el caso normal de sesion muerta es un 302 hacia
+ * /new-onboarding/, y eso ya lo detecta el transporte. Esto solo cubre el
+ * escenario de que alguna ruta sirva el shell de acceso con un 200.
+ *
+ * Los marcadores estan comprobados contra produccion: la pantalla de acceso es
+ * un shell de Vue de 773 bytes que carga sus bundles desde s3.forge.fans y no
+ * contiene NADA del texto visible del formulario, porque lo pinta JavaScript en
+ * el cliente. Buscar ahi "Continuar con Google" no encontraba nunca nada.
  */
-const LOGIN_PAGE_MARKERS = [
-  'new-onboarding/auth',
-  'Continuar con Google',
-  'Continue with Google',
-  'id="login',
-  'action="/login',
-]
-
-export class MisterSessionExpiredError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'MisterSessionExpiredError'
-  }
-}
+const LOGIN_PAGE_MARKERS = ['app_vue/dist', 'forge-app/', '<title>Loading...</title>']
 
 function looksLikeLoginPage(html: string): boolean {
   return LOGIN_PAGE_MARKERS.some((m) => html.includes(m))

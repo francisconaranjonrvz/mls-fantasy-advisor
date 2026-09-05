@@ -73,3 +73,55 @@ Mister es 10.000 por punto. Merece la pena confirmar que esta efectivamente desa
 porque seria un ingreso ligado al rendimiento que cambiaria el balance de todos.
 
 Estado: `bonusPerPoint = 0`.
+
+## 7. Longevidad de la sesion capturada (impacto ALTO)
+
+Esta es la incognita que decide si el sistema aguanta nueve meses solo, y la
+evidencia disponible es mas floja de lo que parece a primera vista.
+
+**Lo que si esta comprobado:**
+
+- El `refresh-token` es un JWT con `exp` exactamente 100 anos despues de su
+  emision, y el payload declara `id_token_lifetime_in_min: "5"`. No caduca por
+  su propia declaracion.
+- El unico proyecto publico que hace esto mismo en produccion
+  (`IgnacioGarijo/elcerdo`) se autentica **solo con la cookie**, con
+  `MISTER_EMAIL` y `MISTER_PASSWORD` vacios en sus ejecuciones.
+- No hay senal de bloqueo por IP de datacenter: sus ejecuciones completan
+  ~500 peticiones autenticadas en 90-180 s desde GitHub Actions sin un solo
+  429, 403 ni captcha.
+
+**Lo que NO esta comprobado, y conviene no dar por hecho:**
+
+- **Ese proyecto lleva 6 ejecuciones en 6 dias, no meses.** Es evidencia de que
+  el mecanismo funciona hoy, no de que aguante una temporada.
+- Que el `exp` a 100 anos signifique que la sesion no muere. El campo `refresh`
+  del payload es un identificador opaco del lado servidor: un TTL de
+  inactividad o una purga del almacen de sesiones la invalidarian sin que nada
+  del token lo delate.
+- Que el `refresh-token` no rote. La evidencia se reduce a un unico salto de
+  24 horas reutilizando el mismo valor. Si Mister rotase, habria que reescribir
+  el secret en cada ejecucion.
+- Que la ausencia de bloqueos transfiera a este proyecto. Ese scraper conduce un
+  Chromium real con Playwright; este cliente es `fetch` pelado, con otra huella
+  TLS y sin ejecutar JavaScript. La comparacion no es directa.
+
+**Consecuencia practica:** trata la recaptura de sesion como un evento probable,
+no remoto. El sistema esta preparado: detecta la sesion muerta y dice
+exactamente que hacer.
+
+## 8. Como saber si tu cuenta admite contrasena (resuelto)
+
+Mister expone un endpoint **publico y sin autenticacion** que dice que metodos
+de acceso admite una cuenta. Comprobado contra produccion:
+
+```bash
+curl "https://mister.mundodeportivo.com/api2/users/auth-methods?email=TU_EMAIL"
+```
+
+- `{"supportedAuthMethods":["email"]}` -> la cuenta admite contrasena.
+- Si aparece `"google"` y no `"email"` -> solo OAuth, hay que capturar sesion.
+- `404 [{"message":"Usuario no encontrado"}]` -> ese email no esta registrado.
+
+No tiene efectos secundarios: solo consulta. Es la forma mas rapida de saber por
+que via hay que ir.

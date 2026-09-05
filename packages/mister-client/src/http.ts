@@ -31,6 +31,24 @@ export interface ThrottleOptions {
 export const POLITE_THROTTLE: ThrottleOptions = { minDelayMs: 5_000, jitterMs: 7_000 }
 export const FAST_THROTTLE: ThrottleOptions = { minDelayMs: 400, jitterMs: 400 }
 
+/**
+ * Mister no responde 401 a las peticiones de PAGINA cuando la sesion ha
+ * muerto: responde 302 hacia /new-onboarding/ con el cuerpo vacio. Como el
+ * cliente usa redirect:'manual', eso llegaba como un 302 generico y se
+ * convertia en un MisterHttpError incomprensible.
+ *
+ * Detectarlo en el transporte lo arregla de una vez para las cuatro rutas.
+ */
+export class MisterSessionExpiredError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MisterSessionExpiredError'
+  }
+}
+
+/** Destino del redirect con el que Mister expulsa a quien no tiene sesion. */
+const AUTH_REDIRECT_MARKER = 'new-onboarding'
+
 export class MisterHttpError extends Error {
   readonly status: number
   readonly path: string
@@ -46,6 +64,26 @@ export class MisterHttpError extends Error {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Reconoce una cookie de borrado. Mister expulsa una sesion muerta enviando
+ * 'token=0; Max-Age=0' y 'refresh-token=0; Max-Age=0'; guardar eso como si
+ * fuera un valor nuevo dejaba el tarro inservible.
+ */
+function isDeletionCookie(attributes: string[], value: string): boolean {
+  if (value === '' || value === '0') return true
+  for (const attr of attributes.slice(1)) {
+    const [rawKey, ...rest] = attr.split('=')
+    const key = (rawKey ?? '').trim().toLowerCase()
+    const val = rest.join('=').trim()
+    if (key === 'max-age' && Number(val) <= 0) return true
+    if (key === 'expires') {
+      const when = Date.parse(val)
+      if (Number.isFinite(when) && when <= Date.now()) return true
+    }
+  }
+  return false
+}
 
 /**
  * Cliente HTTP con cookies propias y autolimitacion.
@@ -83,17 +121,47 @@ export class MisterHttp {
     this.leagueId = session.leagueId
   }
 
+  /**
+   * Absorbe las cookies nuevas, que es como se renueva el token de 5 minutos.
+   *
+   * Ojo con las cookies de BORRADO: al expulsar una sesion, Mister responde con
+   * 'token=0; Max-Age=0' y 'refresh-token=0; Max-Age=0'. Guardarlas tal cual
+   * envenenaba el tarro y dejaba la sesion inservible para el resto del
+   * proceso, aunque las cookies originales fueran buenas. Se descartan por
+   * Max-Age, por expires pasado y por el valor centinela.
+   */
   private absorbSetCookie(res: Response): void {
     for (const raw of res.headers.getSetCookie()) {
-      const [pair] = raw.split(';')
+      const parts = raw.split(';')
+      const pair = parts[0]
       if (!pair) continue
       const idx = pair.indexOf('=')
       if (idx <= 0) continue
+
       const name = pair.slice(0, idx).trim()
       const value = pair.slice(idx + 1).trim()
-      if (name === 'token' || name === 'refresh-token' || name === 'PHPSESSID') {
-        this.cookies.set(name, value)
+      if (!['token', 'refresh-token', 'PHPSESSID'].includes(name)) continue
+
+      if (isDeletionCookie(parts, value)) {
+        this.cookies.delete(name)
+        continue
       }
+      this.cookies.set(name, value)
+    }
+  }
+
+  /**
+   * Lanza si la respuesta es el redirect con el que Mister expulsa a las
+   * sesiones muertas. Se comprueba antes que res.ok porque un 302 no es ok y
+   * si no acabaria camuflado como un error de transporte cualquiera.
+   */
+  private assertNotExpired(res: Response, path: string): void {
+    if (res.status < 300 || res.status >= 400) return
+    const location = res.headers.get('location') ?? ''
+    if (location.includes(AUTH_REDIRECT_MARKER)) {
+      throw new MisterSessionExpiredError(
+        `Mister redirigio ${path} a la pantalla de acceso: la sesion ya no es valida.`,
+      )
     }
   }
 
@@ -130,6 +198,7 @@ export class MisterHttp {
       redirect: 'manual',
     })
     this.absorbSetCookie(res)
+    this.assertNotExpired(res, path)
     const text = await res.text()
     if (!res.ok) throw new MisterHttpError(res.status, path, text)
     return { data: text ? (JSON.parse(text) as T) : (undefined as T), res }
@@ -151,6 +220,7 @@ export class MisterHttp {
       redirect: 'manual',
     })
     this.absorbSetCookie(res)
+    this.assertNotExpired(res, path)
     const text = await res.text()
     if (!res.ok) throw new MisterHttpError(res.status, path, text)
     try {
@@ -178,6 +248,7 @@ export class MisterHttp {
       redirect: 'manual',
     })
     this.absorbSetCookie(res)
+    this.assertNotExpired(res, path)
     const text = await res.text()
     if (!res.ok) throw new MisterHttpError(res.status, path, text)
     return text
@@ -194,6 +265,7 @@ export class MisterHttp {
       redirect: 'manual',
     })
     this.absorbSetCookie(res)
+    this.assertNotExpired(res, path)
     const text = await res.text()
     if (!res.ok) throw new MisterHttpError(res.status, path, text)
     return text
