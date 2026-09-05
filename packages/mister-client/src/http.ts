@@ -97,6 +97,19 @@ export class MisterHttp {
   xAuth: string | undefined
   leagueId: string | undefined
 
+  /**
+   * Se invoca al recibir un 401 en una llamada AJAX. Debe devolver un X-Auth
+   * fresco, o null si la sesion esta realmente muerta.
+   *
+   * Existe porque el 401 de /ajax/* es ambiguo: da lo mismo un X-Auth rancio
+   * que una sesion caducada, el cuerpo es identico. Pero el orden de las
+   * comprobaciones lo desambigua: si al arrancar validamos la sesion pidiendo
+   * una pagina HTML y salio bien, un 401 posterior apunta antes al token que a
+   * la sesion. Asi que merece la pena volver a raspar y reintentar una vez
+   * antes de abortar una ingesta que puede llevar minutos.
+   */
+  onStaleAuth: (() => Promise<string | null>) | undefined
+
   private readonly throttle: ThrottleOptions
 
   constructor(throttle: ThrottleOptions = POLITE_THROTTLE) {
@@ -204,8 +217,30 @@ export class MisterHttp {
     return { data: text ? (JSON.parse(text) as T) : (undefined as T), res }
   }
 
-  /** POST form-encoded que devuelve JSON. Lo usan los endpoints /ajax/. */
+  /**
+   * POST form-encoded que devuelve JSON. Lo usan los endpoints /ajax/.
+   *
+   * Ante un 401 intenta refrescar el X-Auth y reintenta UNA vez. Sin esto, un
+   * token rancio a mitad de ingesta tira abajo el trabajo de varios minutos.
+   */
   async postForm<T>(path: string, form: Record<string, string | number>): Promise<T> {
+    try {
+      return await this.postFormOnce<T>(path, form)
+    } catch (err) {
+      if (!(err instanceof MisterHttpError) || err.status !== 401 || !this.onStaleAuth) throw err
+
+      const fresh = await this.onStaleAuth()
+      if (!fresh) {
+        throw new MisterSessionExpiredError(
+          `Mister rechazo ${path} con 401 y no se pudo renovar el token de sesion.`,
+        )
+      }
+      this.xAuth = fresh
+      return await this.postFormOnce<T>(path, form)
+    }
+  }
+
+  private async postFormOnce<T>(path: string, form: Record<string, string | number>): Promise<T> {
     await this.waitTurn()
     const body = new URLSearchParams(
       Object.entries(form).map(([k, v]) => [k, String(v)] as [string, string]),

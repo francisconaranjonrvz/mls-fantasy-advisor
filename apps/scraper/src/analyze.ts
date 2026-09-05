@@ -4,8 +4,9 @@ import {
 import {
   buildValuationContext, reconstructBalance, exactBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
+  optimizeLineup, bestSubstitution,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
-  type Calibration,
+  type Calibration, type LineupPlan, type SubstitutionAdvice,
 } from '@mls/engine'
 
 /**
@@ -57,6 +58,22 @@ export interface Diagnosis {
   raids: RaidTarget[]
   raidPlan: { plan: RaidTarget[]; totalCost: Euros; remainingCapacity: Euros }
   deadweight: { playerId: number; name: string; value: Euros; reason: string }[]
+  /**
+   * Once optimo para la proxima jornada. Es exacto, no aproximado: dentro de
+   * una formacion las posiciones no compiten entre si, asi que coger los
+   * mejores de cada una es optimo, y se enumeran todas las formaciones.
+   */
+  lineup: {
+    formation: string
+    expectedPoints: number
+    emptySlots: number
+    penalty: number
+    starters: { playerId: number; name: string; position: string; expectedPoints: number }[]
+    /** Cuanto se perderia con el segundo mejor dibujo. */
+    costOfNextBest: number
+    /** El unico cambio que permite el reglamento, si merece la pena. */
+    substitution: { outName: string; inName: string; gain: number; rationale: string } | null
+  } | null
   contract: {
     jornadasPlayed: number
     /** Aportacion teorica acumulada por participante, en euros reales. */
@@ -216,6 +233,39 @@ export function analyze(
     ]
   }
 
+  // Once optimo. Solo tiene sentido con plantilla propia identificada.
+  let lineup: Diagnosis['lineup'] = null
+  if (self && self.squad.length > 0) {
+    const { best, alternatives } = optimizeLineup(self.squad, valuation, config)
+    const sub = bestSubstitution(best, valuation)
+    lineup = {
+      formation: best.formation.name,
+      expectedPoints: Math.round(best.expectedPoints * 10) / 10,
+      emptySlots: best.emptySlots,
+      penalty: best.penalty,
+      starters: best.slots
+        .filter((sl) => sl.player !== null)
+        .map((sl) => ({
+          playerId: sl.player!.id,
+          name: sl.player!.name,
+          position: sl.position,
+          expectedPoints: Math.round(sl.expectedPoints * 10) / 10,
+        })),
+      costOfNextBest:
+        alternatives.length > 0
+          ? Math.round((best.expectedPoints - alternatives[0]!.expectedPoints) * 10) / 10
+          : 0,
+      substitution: sub
+        ? {
+            outName: sub.out.name,
+            inName: sub.in.name,
+            gain: Math.round(sub.gain * 10) / 10,
+            rationale: sub.rationale,
+          }
+        : null,
+    }
+  }
+
   const standings = [...snapshot.managers].sort((a, b) => b.points - a.points)
   const rank = self ? standings.findIndex((m) => m.id === self.id) + 1 : 0
   const leaderPoints = standings[0]?.points ?? 0
@@ -242,6 +292,7 @@ export function analyze(
     raids: raids.filter((r) => r.viable).slice(0, 15),
     raidPlan,
     deadweight,
+    lineup,
     contract: {
       jornadasPlayed,
       duePerParticipant: jornadasPlayed * MLS_CONTRACT.feePerJornada,

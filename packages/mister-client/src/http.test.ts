@@ -85,3 +85,46 @@ describe('las cookies de borrado no deben envenenar el tarro', () => {
     expect(http.cookieHeader).not.toContain('token=basura')
   })
 })
+
+describe('recuperacion de un X-Auth rancio a mitad de ingesta', () => {
+  const ok = () => new Response(JSON.stringify({ status: 'ok', data: { balance: 10 } }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  })
+  /** Respuesta literal de Mister ante un 401 en /ajax/*: 32 bytes, opaca. */
+  const unauthorized = () => new Response('{"status":"error","popup":false}', { status: 401 })
+
+  it('renueva el token y reintenta una vez en lugar de tirar la ingesta', async () => {
+    mockFetch([unauthorized(), ok()])
+    const http = new MisterHttp(FAST_THROTTLE)
+    http.xAuth = 'rancio'
+    http.onStaleAuth = async () => 'fresco'
+
+    const res = await http.postForm<{ status: string }>('/ajax/balance', {})
+    expect(res.status).toBe('ok')
+    expect(http.xAuth).toBe('fresco')
+  })
+
+  it('si tampoco se puede renovar, lo trata como sesion caducada y no como 401 opaco', async () => {
+    mockFetch([unauthorized()])
+    const http = new MisterHttp(FAST_THROTTLE)
+    http.onStaleAuth = async () => null
+
+    await expect(http.postForm('/ajax/balance', {})).rejects.toBeInstanceOf(MisterSessionExpiredError)
+  })
+
+  it('no reintenta en bucle: si el segundo intento tambien falla, propaga', async () => {
+    mockFetch([unauthorized(), unauthorized()])
+    const http = new MisterHttp(FAST_THROTTLE)
+    let renovaciones = 0
+    http.onStaleAuth = async () => { renovaciones++; return 'fresco' }
+
+    await expect(http.postForm('/ajax/balance', {})).rejects.toBeInstanceOf(MisterHttpError)
+    expect(renovaciones).toBe(1)
+  })
+
+  it('sin hook instalado, un 401 sigue siendo un error de transporte normal', async () => {
+    mockFetch([unauthorized()])
+    const http = new MisterHttp(FAST_THROTTLE)
+    await expect(http.postForm('/ajax/balance', {})).rejects.toBeInstanceOf(MisterHttpError)
+  })
+})

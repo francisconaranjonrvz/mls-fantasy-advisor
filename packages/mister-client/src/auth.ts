@@ -112,6 +112,8 @@ export async function login(
   const leagueId = extractLeagueId(html) ?? undefined
   if (leagueId) http.leagueId = leagueId
 
+  installStaleAuthRecovery(http)
+
   return { http, session: { cookies: http.cookieHeader, xAuth, leagueId } }
 }
 
@@ -188,7 +190,26 @@ export async function restoreSession(
   const leagueId = extractLeagueId(html) ?? undefined
   if (leagueId) http.leagueId = leagueId
 
+  installStaleAuthRecovery(http)
+
   return { http, session: { cookies: http.cookieHeader, xAuth, leagueId } }
+}
+
+/**
+ * Permite al transporte recuperarse de un X-Auth rancio a mitad de ingesta.
+ *
+ * El token va ligado a la sesion y es estable, pero una ingesta completa dura
+ * varios minutos y hace cientos de llamadas; si caduca a mitad, perder todo el
+ * trabajo por no volver a pedir una pagina seria absurdo.
+ */
+export function installStaleAuthRecovery(http: MisterHttp): void {
+  http.onStaleAuth = async () => {
+    // Si la sesion esta muerta de verdad, este GET lanza
+    // MisterSessionExpiredError por el redirect y no devuelve nada, que es
+    // justo lo que queremos: distinguir token rancio de sesion caducada.
+    const html = await http.fetchPage('/market')
+    return extractXAuth(html)
+  }
 }
 
 export interface AuthConfig {

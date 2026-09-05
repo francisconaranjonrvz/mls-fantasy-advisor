@@ -77,6 +77,15 @@ export interface Diagnosis {
   raids: Raid[]
   raidPlan: { plan: Raid[]; totalCost: number; remainingCapacity: number }
   deadweight: { playerId: number; name: string; value: number; reason: string }[]
+  lineup: {
+    formation: string
+    expectedPoints: number
+    emptySlots: number
+    penalty: number
+    starters: { playerId: number; name: string; position: string; expectedPoints: number }[]
+    costOfNextBest: number
+    substitution: { outName: string; inName: string; gain: number; rationale: string } | null
+  } | null
   warnings: string[]
 }
 

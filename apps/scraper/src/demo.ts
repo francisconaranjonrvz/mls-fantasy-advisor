@@ -1,4 +1,7 @@
-import { M, type LeagueSnapshot, type Manager, type OwnedPlayer, type Player, type Transaction } from '@mls/core'
+import {
+  M, type LeagueSnapshot, type Manager, type OwnedPlayer, type Player, type Position,
+  type Transaction,
+} from '@mls/core'
 import type { IngestResult } from './ingest.ts'
 
 /**
@@ -40,6 +43,18 @@ function player(
   }
 }
 
+/**
+ * Reparto de posiciones de una plantilla real de 18: sobra gente en todas las
+ * lineas para que el optimizador tenga algo que decidir. Sin esto la demo no
+ * podia ni completar un once y el optimizador parecia roto.
+ */
+const SQUAD_SHAPE: Position[] = [
+  'GK', 'GK',
+  'DF', 'DF', 'DF', 'DF', 'DF', 'DF',
+  'MF', 'MF', 'MF', 'MF', 'MF', 'MF',
+  'FW', 'FW', 'FW', 'FW',
+]
+
 export interface DemoData extends IngestResult {
   baseline: { initialSquadValueByManager: Record<string, number> }
 }
@@ -51,16 +66,19 @@ export function buildDemoSnapshot(): DemoData {
   const ownSquad: OwnedPlayer[] = [
     // Chollo protegible: rinde mucho para lo que cuesta, y su clausula queda
     // al alcance de algun rival.
-    { ...player('Chollo Protegible', M(9), 48, { clause: M(13.5) }), ownerId: selfId },
+    { ...player('Chollo Protegible', M(9), 48, { clause: M(13.5), position: 'GK' }), ownerId: selfId },
     // Cebo: clausula muy por encima de lo que va a rendir.
-    { ...player('Cebo Caro', M(22), 12, { clause: M(40) }), ownerId: selfId },
+    { ...player('Cebo Caro', M(22), 12, { clause: M(40), position: 'DF' }), ownerId: selfId },
     // Imposible de proteger: ni el tramo maximo lo saca del alcance del rico.
-    { ...player('Estrella Expuesta', M(11), 62, { clause: M(16.5) }), ownerId: selfId },
+    { ...player('Estrella Expuesta', M(11), 62, { clause: M(16.5), position: 'FW' }), ownerId: selfId },
     // Lastre: se fue de LaLiga, puntuara cero el resto de temporada.
-    { ...player('Se Fue A Arabia', M(8), 20, { hasTeam: false, clause: M(12) }), ownerId: selfId },
-    // Relleno normal.
+    { ...player('Se Fue A Arabia', M(8), 20, { hasTeam: false, clause: M(12), position: 'DF' }), ownerId: selfId },
+    // Relleno con posiciones realistas, empezando tras los 4 casos especiales.
     ...Array.from({ length: 14 }, (_, i) => ({
-      ...player(`Titular ${i + 1}`, M(4 + (i % 5)), 18 + (i % 7), { clause: M(6 + (i % 5) * 1.5) }),
+      ...player(`Titular ${i + 1}`, M(4 + (i % 5)), 18 + (i % 7), {
+        clause: M(6 + (i % 5) * 1.5),
+        position: SQUAD_SHAPE[i + 4] ?? 'MF',
+      }),
       ownerId: selfId,
     })),
   ]
@@ -76,6 +94,7 @@ export function buildDemoSnapshot(): DemoData {
       const squad: OwnedPlayer[] = Array.from({ length: 18 }, (_, j) => ({
         ...player(`${name} J${j + 1}`, M(3 + ((i + j) % 8)), 12 + ((i * 3 + j * 5) % 40), {
           clause: M((3 + ((i + j) % 8)) * 1.5),
+          position: SQUAD_SHAPE[j] ?? 'MF',
         }),
         ownerId: id,
       }))

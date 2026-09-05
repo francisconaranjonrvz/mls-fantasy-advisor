@@ -209,6 +209,53 @@ export function App() {
         )}
       </section>
 
+      {data.lineup && (
+        <section>
+          <h2>Once recomendado</h2>
+          <div className="item">
+            <h3>
+              {data.lineup.formation}
+              <span className="tag">{data.lineup.expectedPoints} pts esperados</span>
+              {data.lineup.emptySlots > 0 && (
+                <span className="tag alto">{data.lineup.emptySlots} huecos</span>
+              )}
+            </h3>
+            {(['GK', 'DF', 'MF', 'FW'] as const).map((pos) => {
+              const linea = data.lineup!.starters.filter((s) => s.position === pos)
+              if (linea.length === 0) return null
+              return (
+                <div className="facts" key={pos} style={{ marginTop: 6 }}>
+                  <span style={{ minWidth: 32 }}><b>{pos}</b></span>
+                  <span>{linea.map((s) => `${s.name} (${s.expectedPoints})`).join(' · ')}</span>
+                </div>
+              )
+            })}
+            {data.lineup.costOfNextBest > 0 && (
+              <p className="why">
+                El siguiente mejor dibujo rendiría {data.lineup.costOfNextBest} puntos menos.
+              </p>
+            )}
+          </div>
+
+          {data.lineup.emptySlots > 0 && (
+            <div className="note warn">
+              Quedan {data.lineup.emptySlots} huecos sin cubrir, que restan{' '}
+              {Math.abs(data.lineup.penalty)} puntos. Merece la pena fichar aunque sea barato: un
+              canterano de 160.000 evita ese −4.
+            </div>
+          )}
+
+          {data.lineup.substitution && (
+            <div className="note">
+              Cambio durante la jornada (solo se permite uno):{' '}
+              <b>{data.lineup.substitution.outName}</b> por{' '}
+              <b>{data.lineup.substitution.inName}</b>, +{data.lineup.substitution.gain} puntos.{' '}
+              {data.lineup.substitution.rationale}
+            </div>
+          )}
+        </section>
+      )}
+
       {data.deadweight.length > 0 && (
         <section>
           <h2>Lastre a vender</h2>

@@ -158,6 +158,38 @@ export function renderDiagnosis(d: Diagnosis): string {
     }
   }
 
+  // --- Once ---
+  if (d.lineup) {
+    const l = d.lineup
+    L.push('## Once recomendado para la proxima jornada')
+    L.push('')
+    L.push(`Formacion **${l.formation}**, ${l.expectedPoints} puntos esperados.`)
+    if (l.costOfNextBest > 0) {
+      L.push(`El siguiente mejor dibujo rendiria ${l.costOfNextBest} puntos menos.`)
+    }
+    L.push('')
+    for (const pos of ['GK', 'DF', 'MF', 'FW']) {
+      const line = l.starters.filter((s) => s.position === pos)
+      if (line.length === 0) continue
+      L.push(`- **${pos}**: ` + line.map((s) => `${s.name} (${s.expectedPoints})`).join(', '))
+    }
+    L.push('')
+    if (l.emptySlots > 0) {
+      L.push(
+        `> Quedan ${l.emptySlots} huecos sin cubrir, que restan ${Math.abs(l.penalty)} puntos. ` +
+        'Merece la pena fichar aunque sea barato: un canterano de 160.000 evita ese -4.',
+      )
+      L.push('')
+    }
+    if (l.substitution) {
+      L.push(
+        `> Cambio durante la jornada (solo se permite uno): ${l.substitution.outName} por ` +
+        `${l.substitution.inName}, +${l.substitution.gain} puntos. ${l.substitution.rationale}`,
+      )
+      L.push('')
+    }
+  }
+
   // --- Lastre ---
   if (d.deadweight.length > 0) {
     L.push('## Lastre a vender')
