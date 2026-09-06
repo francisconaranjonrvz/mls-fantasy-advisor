@@ -65,6 +65,28 @@ async function main(): Promise<void> {
 
   console.log('')
   console.log('='.repeat(72))
+  console.log('CAMPO sign DEL LIBRO DE MOVIMIENTOS')
+  console.log('='.repeat(72))
+  try {
+    const balance = await api.getBalance()
+    const combos = new Map<string, number>()
+    for (const m of balance.history) {
+      // Se codifica el signo para ver el caracter exacto: un guion ASCII y un
+      // menos tipografico son indistinguibles a simple vista y se comportan
+      // distinto en una comparacion.
+      const raw = String(m.sign ?? '(ausente)')
+      const codes = [...raw].map((c) => c.charCodeAt(0)).join(',')
+      const key = `tipo="${m.type ?? '?'}"  sign="${raw}" [U+${codes}]`
+      combos.set(key, (combos.get(key) ?? 0) + 1)
+    }
+    for (const [k, n] of [...combos].sort()) console.log(`  ${String(n).padStart(3)}x  ${k}`)
+  } catch (err) {
+    console.log(`  FALLA: ${err instanceof Error ? err.message.split('
+')[0] : String(err)}`)
+  }
+
+  console.log('')
+  console.log('='.repeat(72))
   console.log('PAGINAS HTML  (que selectores del parser siguen encontrando algo)')
   console.log('='.repeat(72))
   for (const pagina of PAGINAS) {
