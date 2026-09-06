@@ -7,18 +7,24 @@ stack es gratuito y no requiere tarjeta.
 
 ### Antes de nada: comprueba que admite tu cuenta
 
-Mister expone un endpoint publico que dice exactamente que metodos de acceso
-admite un email. No tiene efectos secundarios y resuelve la duda en un segundo:
+Mister expone un endpoint publico que dice que metodos de acceso admite un
+email. No tiene efectos secundarios y resuelve en un segundo la pregunta que
+decide todo lo demas:
 
 ```bash
-curl "https://mister.mundodeportivo.com/api2/users/auth-methods?email=TU_EMAIL"
+pnpm check:auth tu-email@ejemplo.com
 ```
 
-- Si responde `{"supportedAuthMethods":["email"]}`, tu cuenta admite contrasena:
-  ve a la seccion de credenciales nativas, que es la via mas simple.
-- Si responde con `"google"` y sin `"email"`, solo puedes entrar por OAuth: ve a
-  la captura de sesion.
-- Si responde `404`, ese email no esta registrado en Mister.
+Te dice si tu cuenta admite contrasena y cuales son los pasos siguientes en cada
+caso. Usa el email con el que entras en Mister; si entras con Google, sera el de
+esa cuenta.
+
+> Si prefieres hacerlo a mano, el endpoint es
+> `GET https://mister.mundodeportivo.com/api2/users/auth-methods?email=...`.
+> Ojo en PowerShell: ahi `curl` es un alias de `Invoke-WebRequest`, que lanza
+> excepcion ante cualquier respuesta que no sea 200, asi que un 404 te saldra
+> como error en vez de mostrarte el cuerpo. Usa `Invoke-RestMethod` dentro de un
+> `try/catch`, o directamente el script de arriba.
 
 ### Si entras con "Continuar con Google" (lo habitual)
 

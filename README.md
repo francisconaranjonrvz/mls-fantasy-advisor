@@ -101,6 +101,12 @@ Para conectarlo a tu liga de verdad y desplegar el dashboard, ver
 
 ### Acceso a Mister
 
+Primero, para saber por que via va tu cuenta:
+
+```bash
+pnpm check:auth tu-email@ejemplo.com
+```
+
 Quien entra en Mister con "Continuar con Google" no tiene contrasena nativa, asi que el
 login por API no le sirve. Para ese caso, `pnpm capture:session` abre un navegador, te deja
 entrar a mano y guarda la sesion resultante, que es lo que usa el scraper. El script valida
