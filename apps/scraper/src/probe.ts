@@ -1,4 +1,6 @@
-import { MisterHttp, MisterEndpoints, authenticate, describeHtml } from '@mls/mister-client'
+import {
+  MisterHttp, MisterEndpoints, authenticate, describeHtml, describeStructure,
+} from '@mls/mister-client'
 import { loadConfig } from './config.ts'
 
 /**
@@ -104,6 +106,25 @@ async function main(): Promise<void> {
       const msg = err instanceof Error ? err.message.split('\n')[0] : String(err)
       console.log(`\n  ${pagina}  FALLA: ${sanea(msg ?? '')}`)
     }
+  }
+
+  console.log('')
+  console.log('='.repeat(72))
+  console.log('ESQUELETO DEL FEED DE ACTIVIDAD')
+  console.log('(etiquetas y clases; el texto se sustituye por su longitud para')
+  console.log(' no publicar nombres de rivales ni importes en un log publico)')
+  console.log('='.repeat(72))
+  try {
+    const feedHtml = await api.getFeedHtml()
+    for (const sel of ['.player-row', '.btn-sw', 'li']) {
+      const skeletons = describeStructure(feedHtml, sel, 2)
+      if (skeletons.length === 0) continue
+      console.log(`
+>>> selector ${sel}`)
+      for (const sk of skeletons) console.log(sk)
+    }
+  } catch (err) {
+    console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
   }
 
   console.log('')

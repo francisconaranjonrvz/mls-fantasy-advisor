@@ -419,3 +419,48 @@ function isoFromMovement(m: { ts?: number; adate?: string }): string {
   if (typeof m.ts === 'number' && m.ts > 0) return new Date(m.ts * 1000).toISOString()
   return parseMisterDate(m.adate ?? '') ?? ''
 }
+
+/**
+ * Vuelca el ESQUELETO de los primeros elementos que casan con un selector.
+ *
+ * Devuelve etiquetas, clases y nombres de atributo, pero sustituye todo el
+ * texto por su longitud. Sirve para escribir un parser nuevo mirando la forma
+ * real del marcado sin publicar su contenido, que en el caso del feed de
+ * actividad son nombres de rivales e importes de sus fichajes: justo lo que la
+ * liga mantiene privado.
+ */
+export function describeStructure(html: string, selector: string, limit = 2): string[] {
+  const $ = cheerio.load(html)
+  const out: string[] = []
+
+  $(selector).slice(0, limit).each((i, el) => {
+    const lines: string[] = [`--- ${selector} [${i}] ---`]
+
+    const walk = (node: Element, depth: number): void => {
+      const $n = $(node)
+      const tag = node.tagName ?? '?'
+      const cls = ($n.attr('class') ?? '').trim()
+      // Solo los NOMBRES de los atributos de datos, nunca sus valores: un
+      // data-id_player es inofensivo, pero no hace falta para escribir el parser.
+      const attrs = Object.keys(node.attribs ?? {})
+        .filter((a) => a !== 'class' && a !== 'style')
+        .join(' ')
+      const ownText = $n.clone().children().remove().end().text().trim()
+      const textNote = ownText ? ` texto(${ownText.length})` : ''
+
+      lines.push(
+        '  '.repeat(depth) +
+          `<${tag}${cls ? ` class="${cls}"` : ''}${attrs ? ` [${attrs}]` : ''}>${textNote}`,
+      )
+
+      if (depth < 5) {
+        $n.children().each((_j, child) => walk(child as Element, depth + 1))
+      }
+    }
+
+    walk(el as Element, 0)
+    out.push(lines.join('\n'))
+  })
+
+  return out
+}
