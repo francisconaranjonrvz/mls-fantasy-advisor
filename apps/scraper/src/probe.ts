@@ -81,8 +81,7 @@ async function main(): Promise<void> {
     }
     for (const [k, n] of [...combos].sort()) console.log(`  ${String(n).padStart(3)}x  ${k}`)
   } catch (err) {
-    console.log(`  FALLA: ${err instanceof Error ? err.message.split('
-')[0] : String(err)}`)
+    console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
   }
 
   console.log('')
