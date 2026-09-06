@@ -566,11 +566,22 @@ export function parseFeedTransfers(html: string): FeedTransfer[] {
 export function feedTransfersToTransactions(
   transfers: FeedTransfer[],
   at: string,
+  /**
+   * Resuelve el nombre de un jugador por su id.
+   *
+   * Hace falta porque la tarjeta de traspaso del feed NO trae el nombre: su
+   * player-row solo lleva el icono y el avatar con data-id_player, sin el
+   * bloque .info que si tienen las filas del mercado. Sin resolverlo, los
+   * apuntes salen sin nombre y no se pueden contrastar contra el libro propio,
+   * que es la unica forma de verificar que la direccion inferida es correcta.
+   */
+  resolvePlayerName?: (playerId: number) => string | undefined,
 ): Transaction[] {
   const out: Transaction[] = []
 
   for (const t of transfers) {
     const esClausulazo = /cl[aá]usula/i.test(t.title)
+    const playerName = t.playerName || resolvePlayerName?.(t.playerId)
 
     if (t.fromManagerId !== undefined) {
       out.push({
@@ -580,7 +591,7 @@ export function feedTransfersToTransactions(
         managerId: t.fromManagerId,
         counterpartyId: t.toManagerId,
         playerId: t.playerId,
-        playerName: t.playerName,
+        playerName,
       })
     }
 
@@ -592,7 +603,7 @@ export function feedTransfersToTransactions(
         managerId: t.toManagerId,
         counterpartyId: t.fromManagerId,
         playerId: t.playerId,
-        playerName: t.playerName,
+        playerName,
       })
     }
   }

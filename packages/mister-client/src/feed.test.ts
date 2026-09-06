@@ -125,3 +125,41 @@ describe('traspasos convertidos en movimientos', () => {
       .toEqual(['purchase', 'sale'])
   })
 })
+
+describe('nombre del jugador en los traspasos', () => {
+  /**
+   * La tarjeta de traspaso del feed no trae el nombre: su player-row solo lleva
+   * el icono y el avatar con data-id_player, sin el bloque .info que si tienen
+   * las filas del mercado. Sin resolverlo por catalogo, los seis apuntes
+   * propios de la liga real salian sin nombre y no habia forma de contrastar la
+   * direccion inferida contra el libro.
+   */
+  const sinNombre = `
+<div class="card card-transfer">
+  <div class="item">
+    <div class="title">Traspaso</div>
+    <div class="player-row">
+      <a class="player"><div class="player-avatar" data-id_player="48657"></div></a>
+      <div class="flow">
+        <a class="user" href="users/111/a"></a>
+        <div class="avatar"></div>
+        <div class="price">5.000.000</div>
+      </div>
+    </div>
+  </div>
+</div>`
+
+  it('lo resuelve por id cuando la tarjeta no lo trae', () => {
+    const transfers = parseFeedTransfers(sinNombre)
+    expect(transfers[0]!.playerName).toBe('')
+    const txs = feedTransfersToTransactions(transfers, 'x', (id) =>
+      id === 48657 ? 'Raphinha' : undefined,
+    )
+    expect(txs[0]!.playerName).toBe('Raphinha')
+  })
+
+  it('sin resolutor no inventa un nombre', () => {
+    const txs = feedTransfersToTransactions(parseFeedTransfers(sinNombre), 'x')
+    expect(txs[0]!.playerName).toBeUndefined()
+  })
+})

@@ -229,7 +229,11 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   try {
     const feedHtml = await api.getFeedHtml()
     const transfers = parseFeedTransfers(feedHtml)
-    const all = feedTransfersToTransactions(transfers, snapshotAt)
+    // El feed da el id del jugador pero no su nombre, asi que se resuelve con
+    // el catalogo. Sin nombre no hay forma de contrastar la direccion inferida
+    // contra el libro propio, que es la unica verificacion disponible.
+    const nombrePorId = new Map(players.map((p) => [p.id, p.name]))
+    const all = feedTransfersToTransactions(transfers, snapshotAt, (id) => nombrePorId.get(id))
     // Los propios se descartan: para uno mismo manda el libro de balance, que
     // es autoritativo y trae fecha y saldo resultante.
     rivalTransactions = all.filter((t) => t.managerId !== selfId)
