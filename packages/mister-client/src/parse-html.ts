@@ -179,6 +179,8 @@ const TRANSACTION_TYPES: Record<string, TransactionType> = {
   sale: 'sale',
   venta: 'sale',
   'buyout signing': 'buyout_signing',
+  // Mister lo llama "Compra por clausula", no "Fichaje por clausula".
+  'compra por clausula': 'buyout_signing',
   'fichaje por clausula': 'buyout_signing',
   'buyout sale': 'buyout_sale',
   'venta por clausula': 'buyout_sale',
@@ -397,8 +399,12 @@ export function movementsToTransactions(
     out.push({
       date: isoFromMovement(m),
       type: parseTransactionType(m.type ?? ''),
-      // El importe llega siempre positivo; el signo va aparte.
-      amount: m.sign === '-' ? -magnitude : magnitude,
+      // Mister marca las ENTRADAS con "+" y las salidas con una cadena VACIA,
+      // no con "-". Comparar contra "-" no acertaba nunca y todas las compras
+      // se guardaban en positivo, lo que inflaba el saldo reconstruido en
+      // decenas de millones. La regla correcta es: positivo si y solo si
+      // el signo es "+".
+      amount: m.sign === '+' ? magnitude : -magnitude,
       managerId,
       counterpartyId: counterpartyName ? resolveManager?.(counterpartyName) : undefined,
       playerName,

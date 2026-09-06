@@ -240,7 +240,8 @@ describe('libro de movimientos en JSON', () => {
     {
       ts: 1788500000,
       reason: 'Lamine Yamal <span>a</span> Mister',
-      sign: '-',
+      // Mister deja el signo VACIO en las salidas; no usa "-".
+      sign: '',
       amount: 14200000,
       type: 'Compra',
       balance: 36192,
@@ -307,5 +308,44 @@ describe('mercado: donde vive el id del jugador', () => {
 
   it('ignora una fila sin id en vez de inventarse uno', () => {
     expect(parseMarket('<ul id="list-on-sale"><li data-price="100"></li></ul>')).toHaveLength(0)
+  })
+})
+
+describe('el signo de los movimientos, tal como lo codifica Mister', () => {
+  /**
+   * Comprobado contra la cuenta real: Mister marca las ENTRADAS con "+" y las
+   * salidas con una cadena VACIA. La comparacion original era contra "-", que
+   * no acierta nunca, asi que las 19 compras del historial se guardaban en
+   * positivo y el saldo reconstruido se inflaba en decenas de millones.
+   */
+  const mov = (type: string, sign: string, amount = 1_000_000) => ({ type, sign, amount, ts: 1 })
+
+  it('trata como entrada solo lo que lleva un "+" explicito', () => {
+    expect(movementsToTransactions([mov('Venta', '+')], 1)[0]!.amount).toBe(1_000_000)
+    expect(movementsToTransactions([mov('Bonificación', '+')], 1)[0]!.amount).toBe(1_000_000)
+  })
+
+  it('trata el signo vacio como salida, que es como Mister marca las compras', () => {
+    expect(movementsToTransactions([mov('Compra', '')], 1)[0]!.amount).toBe(-1_000_000)
+    expect(movementsToTransactions([mov('Penalización', '')], 1)[0]!.amount).toBe(-1_000_000)
+  })
+
+  it('un signo ausente tambien es salida, no una entrada por descuido', () => {
+    expect(movementsToTransactions([{ type: 'Compra', amount: 500 }], 1)[0]!.amount).toBe(-500)
+  })
+
+  it('reconoce "Compra por clausula", que es como Mister llama al clausulazo pagado', () => {
+    expect(movementsToTransactions([mov('Compra por cláusula', '')], 1)[0]!.type)
+      .toBe('buyout_signing')
+  })
+
+  it('los seis tipos reales del historial se reconocen, ninguno cae en unknown', () => {
+    const reales = [
+      'Compra', 'Venta', 'Bonificación', 'Penalización',
+      'Compra por cláusula', 'Venta por cláusula',
+    ]
+    for (const t of reales) {
+      expect(movementsToTransactions([mov(t, '')], 1)[0]!.type).not.toBe('unknown')
+    }
   })
 })
