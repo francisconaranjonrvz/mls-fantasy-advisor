@@ -1,0 +1,34 @@
+name: Sondeo de endpoints
+
+# Herramienta de diagnostico, no de produccion. Se lanza a mano cuando la
+# ingesta empieza a devolver vacios y hay que averiguar que ha cambiado en
+# Mister, en lugar de adivinarlo a base de commits y ejecuciones de diez
+# minutos. No escribe nada.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Sondear
+        env:
+          MISTER_SESSION: ${{ secrets.MISTER_SESSION }}
+          MISTER_EMAIL: ${{ secrets.MISTER_EMAIL }}
+          MISTER_PASSWORD: ${{ secrets.MISTER_PASSWORD }}
+          MISTER_LEAGUE_ID: ${{ secrets.MISTER_LEAGUE_ID }}
+        run: node apps/scraper/src/probe.ts

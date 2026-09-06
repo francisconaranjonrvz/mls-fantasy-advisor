@@ -309,3 +309,44 @@ export function toTransactions(
     }
   })
 }
+
+// ---------------------------------------------------------------------------
+// Diagnostico del marcado
+// ---------------------------------------------------------------------------
+
+export interface HtmlShape {
+  bytes: number
+  /** Cuantos elementos encuentra cada selector consultado. */
+  matches: { selector: string; count: number }[]
+  /** Clases mas frecuentes, para descubrir como se llama ahora lo que buscamos. */
+  topClasses: { name: string; count: number }[]
+}
+
+/**
+ * Describe la forma de un fragmento HTML.
+ *
+ * Sirve para diagnosticar cuando un parser deja de encontrar nada. Saber que
+ * ".player-row" ya no existe es util; saber ademas que ahora abundan
+ * ".pl-row" o similar es lo que permite arreglarlo sin adivinar.
+ */
+export function describeHtml(html: string, selectors: string[], topN = 12): HtmlShape {
+  const $ = cheerio.load(html)
+
+  const counts = new Map<string, number>()
+  $('[class]').each((_i, el) => {
+    for (const c of ($(el).attr('class') ?? '').split(/\s+/)) {
+      if (c) counts.set(c, (counts.get(c) ?? 0) + 1)
+    }
+  })
+
+  return {
+    bytes: html.length,
+    matches: selectors
+      .map((selector) => ({ selector, count: $(selector).length }))
+      .filter((m) => m.count > 0),
+    topClasses: [...counts]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, topN)
+      .map(([name, count]) => ({ name, count })),
+  }
+}

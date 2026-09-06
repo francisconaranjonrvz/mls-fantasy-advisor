@@ -7,7 +7,8 @@
     "start": "node src/main.ts",
     "typecheck": "tsc -p tsconfig.json",
     "capture:session": "node src/capture-session.ts",
-    "check:auth": "node src/check-auth.ts"
+    "check:auth": "node src/check-auth.ts",
+    "probe": "node src/probe.ts"
   },
   "dependencies": {
     "@mls/core": "workspace:*",
