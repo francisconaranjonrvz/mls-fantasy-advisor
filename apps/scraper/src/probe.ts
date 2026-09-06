@@ -116,8 +116,8 @@ async function main(): Promise<void> {
   console.log('='.repeat(72))
   try {
     const feedHtml = await api.getFeedHtml()
-    for (const sel of ['.card-transfer', '.card-wrapper', '.item']) {
-      const skeletons = describeStructure(feedHtml, sel, 2)
+    for (const sel of ['.card-transfer']) {
+      const skeletons = describeStructure(feedHtml, sel, 2, 9)
       if (skeletons.length === 0) continue
       console.log(`
 >>> selector ${sel}`)

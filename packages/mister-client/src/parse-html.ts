@@ -429,7 +429,12 @@ function isoFromMovement(m: { ts?: number; adate?: string }): string {
  * actividad son nombres de rivales e importes de sus fichajes: justo lo que la
  * liga mantiene privado.
  */
-export function describeStructure(html: string, selector: string, limit = 2): string[] {
+export function describeStructure(
+  html: string,
+  selector: string,
+  limit = 2,
+  maxDepth = 5,
+): string[] {
   const $ = cheerio.load(html)
   const out: string[] = []
 
@@ -453,7 +458,7 @@ export function describeStructure(html: string, selector: string, limit = 2): st
           `<${tag}${cls ? ` class="${cls}"` : ''}${attrs ? ` [${attrs}]` : ''}>${textNote}`,
       )
 
-      if (depth < 5) {
+      if (depth < maxDepth) {
         $n.children().each((_j, child) => walk(child as Element, depth + 1))
       }
     }
