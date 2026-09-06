@@ -236,6 +236,14 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     log(`${transfers.length} traspasos en el feed, ${rivalTransactions.length} apuntes de rivales`)
 
     const propios = all.filter((t) => t.managerId === selfId)
+    log(`  de ellos, ${propios.length} apuntes propios utilizables para contrastar`)
+    if (propios.length === 0) {
+      warn(
+        'ningun traspaso del feed te implica a ti, asi que la direccion inferida ' +
+          '(quien entrega y quien recibe) NO se ha podido verificar contra el libro propio. ' +
+          'Si estuviera invertida, los saldos rivales saldrian del reves en silencio.',
+      )
+    }
     if (propios.length > 0) {
       // La direccion del traspaso se infiere del orden dentro de .flow, no de
       // una etiqueta. Contrastarla contra el libro propio, que si es
@@ -243,8 +251,15 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
       const check = crossCheckDirection(propios, transactions)
       log(
         `contraste de direccion con el libro propio: ${check.coinciden} coinciden, ` +
-          `${check.discrepan} discrepan`,
+          `${check.discrepan} discrepan, ${check.sinPareja} sin pareja`,
       )
+      if (check.coinciden === 0 && check.discrepan === 0) {
+        warn(
+          `los ${propios.length} apuntes propios del feed no casan con ninguna entrada del ` +
+            'libro por nombre e importe, asi que la direccion sigue sin verificar. ' +
+            'Puede ser que el feed muestre solo operaciones recientes o que el nombre difiera.',
+        )
+      }
       if (check.discrepan > check.coinciden) {
         warn(
           'la direccion inferida de los traspasos del feed contradice el libro propio en la ' +
@@ -379,19 +394,34 @@ function normalizePlayer(raw: Record<string, unknown>): Player | null {
 function crossCheckDirection(
   fromFeed: Transaction[],
   ownLedger: Transaction[],
-): { coinciden: number; discrepan: number } {
+): { coinciden: number; discrepan: number; sinPareja: number } {
   let coinciden = 0
   let discrepan = 0
+  let sinPareja = 0
+
+  const norm = (s: string) =>
+    s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 
   for (const feedTx of fromFeed) {
-    if (!feedTx.playerName) continue
+    if (!feedTx.playerName) {
+      sinPareja++
+      continue
+    }
+    // Se casa por nombre normalizado e importe: el feed y el libro escriben los
+    // nombres con acentos distintos segun la vista.
     const enLibro = ownLedger.find(
-      (t) => t.playerName === feedTx.playerName && Math.abs(t.amount) === Math.abs(feedTx.amount),
+      (t) =>
+        t.playerName !== undefined &&
+        norm(t.playerName) === norm(feedTx.playerName!) &&
+        Math.abs(t.amount) === Math.abs(feedTx.amount),
     )
-    if (!enLibro) continue
+    if (!enLibro) {
+      sinPareja++
+      continue
+    }
     if (Math.sign(enLibro.amount) === Math.sign(feedTx.amount)) coinciden++
     else discrepan++
   }
 
-  return { coinciden, discrepan }
+  return { coinciden, discrepan, sinPareja }
 }

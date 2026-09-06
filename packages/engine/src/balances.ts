@@ -64,8 +64,8 @@ export interface BalanceEstimate {
 export interface ManagerLedger {
   managerId: number
   /**
-   * Valor de la plantilla de 15 jugadores repartida al empezar. Si no se
-   * conoce, se asume el reparto teorico y se ensancha el intervalo.
+   * Valor de la plantilla repartida al empezar. Si no se conoce, se usa el
+   * rango plausible de INITIAL_SQUAD_VALUE_RANGE en lugar de un punto.
    */
   initialSquadValue?: Euros | undefined
   transactions: Transaction[]
@@ -93,6 +93,22 @@ export function bonusesFromRanks(
     return acc + (config.jornadaRankBonus[idx] ?? 0)
   }, 0)
 }
+
+/**
+ * Rango plausible del valor de la plantilla inicial, como fraccion del
+ * presupuesto.
+ *
+ * Mister reparte 15 jugadores al azar y descuenta su valor de los 50M, asi que
+ * la caja inicial es 50M menos eso. No es un valor libre: 15 jugadores de
+ * LaLiga rondan la mitad del presupuesto, y el reparto aleatorio no produce
+ * plantillas ni casi gratis ni casi de 50M.
+ *
+ * Antes esto se trataba como "no se nada" y se sumaba un margen de 25M a cada
+ * lado, un intervalo de 50M que se comia cualquier señal: ningun rival llegaba
+ * a ser amenaza cierta ni con el historial de traspasos delante. Acotarlo a un
+ * rango realista es lo que hace utiles las estimaciones.
+ */
+export const INITIAL_SQUAD_VALUE_RANGE = { min: 0.4, max: 0.75 } as const
 
 /** Formato 1X2 sobre todos los partidos: como mucho 10 aciertos por jornada. */
 const MAX_QUINIELA_HITS_PER_JORNADA = 10
@@ -126,9 +142,18 @@ export function reconstructBalance(
   const txs = ledger.transactions
   const unknowns: string[] = []
 
+  // Si no se conoce la plantilla inicial, se propaga como RANGO en lugar de
+  // suponer un punto y ensanchar despues a bulto.
+  const known0 = ledger.initialSquadValue !== undefined
   const initialSquadValue = ledger.initialSquadValue ?? config.initialBudget * 0.5
-  if (ledger.initialSquadValue === undefined) {
-    unknowns.push('no se conoce el valor de la plantilla repartida al empezar')
+  const initialSquadLow = known0
+    ? initialSquadValue
+    : config.initialBudget * INITIAL_SQUAD_VALUE_RANGE.min
+  const initialSquadHigh = known0
+    ? initialSquadValue
+    : config.initialBudget * INITIAL_SQUAD_VALUE_RANGE.max
+  if (!known0) {
+    unknowns.push('no se conoce el valor exacto de la plantilla repartida al empezar')
   }
 
   const components: BalanceComponents = {
@@ -170,16 +195,24 @@ export function reconstructBalance(
     unknowns.push('no esta confirmado si los salarios estan activos')
   }
 
-  let low = known + qLow + sLow
-  let high = known + qHigh + sHigh
+  // Mas plantilla inicial significa menos caja inicial: los extremos se cruzan.
+  let low = known + qLow + sLow + (config.initialBudget - initialSquadHigh) - components.initialCash
+  let high = known + qHigh + sHigh + (config.initialBudget - initialSquadLow) - components.initialCash
 
   if (!ledger.historyComplete) {
-    unknowns.push('el historial de movimientos no llega al inicio de temporada')
-    // Sin historial completo esto es poco mas que una conjetura. Lo reflejamos
-    // ensanchando el intervalo en vez de fingir precision.
-    const slack = Math.round(config.initialBudget * 0.5)
-    low -= slack
-    high += slack
+    unknowns.push(
+      'el historial no incluye bonificaciones ni modificaciones de clausula, que el feed no publica',
+    )
+    // Lo que falta no es "todo": son las bonificaciones de jornada y las
+    // modificaciones de clausula. Ambas estan ACOTADAS por las reglas de la
+    // liga, asi que el margen se calcula en vez de inventarse.
+    const jornadas = Math.max(1, jornadasPlayed)
+    const bonusMax = Math.max(...config.jornadaRankBonus) * jornadas
+    const bonusMin = Math.min(...config.jornadaRankBonus) * jornadas
+    // Nadie puede haber gastado en clausulas mas que el valor de su plantilla.
+    const clausulasMax = Math.round(ledger.teamValue * 0.4)
+    low += bonusMin - clausulasMax
+    high += bonusMax
   }
 
   const constraintsApplied: string[] = []

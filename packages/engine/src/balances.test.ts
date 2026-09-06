@@ -200,3 +200,52 @@ describe('rangos auxiliares', () => {
     expect(salaryRange(5, M(90), MLS_LEAGUE)).toEqual([M(-4.5), 0])
   })
 })
+
+describe('intervalos acotados por las reglas, no a bulto', () => {
+  const rival = {
+    managerId: 5,
+    transactions: [tx('purchase', M(-12)), tx('sale', M(4))],
+    historyComplete: false,
+    teamValue: M(120),
+    averageLineupValue: M(80),
+    jornadaRanks: [
+      { jornada: 1, rank: 3 }, { jornada: 2, rank: 5 },
+      { jornada: 3, rank: 2 }, { jornada: 4, rank: 7 },
+    ],
+    scoredJornadas: [1, 2, 3, 4],
+  }
+
+  it('el intervalo es finito y utilizable, no de decenas de millones', () => {
+    const e = reconstructBalance(rival, MLS_LEAGUE)
+    // Antes se sumaba un margen fijo de 25M a cada lado, un ancho de 50M que
+    // tapaba cualquier señal y dejaba a todos los rivales sin clasificar.
+    expect(e.high - e.low).toBeLessThan(M(60))
+    expect(Number.isFinite(e.low)).toBe(true)
+    expect(Number.isFinite(e.high)).toBe(true)
+  })
+
+  it('la cota inferior nunca queda por debajo de cero si el rival puntuo', () => {
+    const e = reconstructBalance(rival, MLS_LEAGUE)
+    expect(e.low).toBeGreaterThanOrEqual(0)
+  })
+
+  it('explica que le falta al historial en vez de decir que no lo tiene', () => {
+    const e = reconstructBalance(rival, MLS_LEAGUE)
+    expect(e.unknowns.join(' ')).toMatch(/bonificaciones/)
+  })
+
+  it('conocer la plantilla inicial estrecha el intervalo', () => {
+    const sinDato = reconstructBalance(rival, MLS_LEAGUE)
+    const conDato = reconstructBalance({ ...rival, initialSquadValue: M(30) }, MLS_LEAGUE)
+    expect(conDato.high - conDato.low).toBeLessThan(sinDato.high - sinDato.low)
+  })
+
+  it('un historial completo estrecha mas todavia', () => {
+    const parcial = reconstructBalance({ ...rival, initialSquadValue: M(30) }, MLS_LEAGUE)
+    const completo = reconstructBalance(
+      { ...rival, initialSquadValue: M(30), historyComplete: true },
+      MLS_LEAGUE,
+    )
+    expect(completo.high - completo.low).toBeLessThan(parcial.high - parcial.low)
+  })
+})
