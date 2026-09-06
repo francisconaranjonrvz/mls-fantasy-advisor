@@ -139,3 +139,62 @@ export function seasonPaths(dataDir: string, seasonId: string): SeasonPaths {
     meta: join(root, 'meta.json'),
   }
 }
+
+/**
+ * Reescribe el libro de movimientos fusionando lo almacenado con lo nuevo.
+ *
+ * El libro NO es una serie temporal como los valores de los jugadores: Mister
+ * devuelve el historial COMPLETO en cada ejecucion, asi que es una lista cuya
+ * fuente de verdad esta siempre del lado del servidor.
+ *
+ * Antes se anadia en modo append-only con una clave que incluia el importe, y
+ * eso tenia un defecto que se manifesto en cuanto se corrigio un fallo del
+ * parser: al cambiar el signo de las compras, la clave cambio, las filas viejas
+ * no se reconocieron y el fichero acabo con 76 filas para 52 movimientos, cada
+ * operacion duplicada con los dos signos.
+ *
+ * La leccion: una clave de deduplicacion no puede depender de valores que
+ * calcula uno mismo. Aqui la clave son solo campos que da Mister (fecha, saldo
+ * resultante y jugador), asi que una correccion del parser ACTUALIZA la fila en
+ * lugar de duplicarla.
+ *
+ * Se fusiona en vez de sobrescribir por si el historial que devuelve Mister
+ * estuviera acotado: lo almacenado nunca se pierde.
+ */
+export function writeTransactionsMerged(
+  path: string,
+  header: string[],
+  rows: unknown[][],
+  keyOf: (row: unknown[]) => string,
+): { total: number; added: number; updated: number } {
+  ensureDir(path)
+
+  const stored = new Map<string, unknown[]>()
+  if (existsSync(path)) {
+    for (const line of readFileSync(path, 'utf8').split('\n').slice(1)) {
+      if (!line.trim()) continue
+      const parsed = parseCsvLine(line)
+      stored.set(keyOf(parsed), parsed)
+    }
+  }
+
+  let added = 0
+  let updated = 0
+  for (const row of rows) {
+    const key = keyOf(row)
+    if (stored.has(key)) {
+      // Misma operacion: se queda la lectura nueva, que refleja el parser actual.
+      if (toCsvLine(stored.get(key)!) !== toCsvLine(row)) updated++
+      stored.set(key, row)
+    } else {
+      stored.set(key, row)
+      added++
+    }
+  }
+
+  // Cronologico, que es como se lee un libro de movimientos.
+  const all = [...stored.values()].sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+  writeFileSync(path, toCsvLine(header) + all.map(toCsvLine).join(''), 'utf8')
+
+  return { total: all.length, added, updated }
+}

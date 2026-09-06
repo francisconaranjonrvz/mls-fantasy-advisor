@@ -5,7 +5,7 @@ import { analyze, type SeasonBaseline } from './analyze.ts'
 import { renderDiagnosis, renderConsoleSummary } from './report.ts'
 import { join } from 'node:path'
 import {
-  seasonPaths, writeJson, writeText, appendCsv, appendCsvDeduped, countCsvRows, readJson,
+  seasonPaths, writeJson, writeText, appendCsv, writeTransactionsMerged, countCsvRows, readJson,
 } from './storage.ts'
 import { buildDemoSnapshot } from './demo.ts'
 import { MisterSessionExpiredError } from '@mls/mister-client'
@@ -121,17 +121,23 @@ async function main(): Promise<void> {
       ]]),
   )
 
-  // Las transacciones se releen enteras cada vez, asi que hay que deduplicar:
-  // una transaccion repetida corrompe la reconstruccion de saldos.
-  const txStats = appendCsvDeduped(
+  // Mister devuelve el historial completo en cada ejecucion, asi que el libro
+  // se fusiona en lugar de anadirse. La clave usa SOLO campos que da Mister
+  // (fecha, saldo resultante y jugador): si incluyera el importe, que lo
+  // calcula el parser, cualquier correccion duplicaria las filas en vez de
+  // corregirlas. Ya paso una vez.
+  const txStats = writeTransactionsMerged(
     paths.transactions,
     ['date', 'managerId', 'type', 'amount', 'counterpartyId', 'playerName', 'balanceAfter'],
     transactions.map((t) => [
       t.date, t.managerId, t.type, t.amount, t.counterpartyId ?? '', t.playerName ?? '', t.balanceAfter ?? '',
     ]),
-    (row) => `${row[0]}|${row[1]}|${row[2]}|${row[3]}|${row[5]}`,
+    (row) => `${row[0]}|${row[6]}|${row[5]}`,
   )
-  console.log(`[main] transacciones: ${txStats.added} nuevas, ${txStats.skipped} ya conocidas`)
+  console.log(
+    `[main] libro de movimientos: ${txStats.total} en total, ` +
+    `${txStats.added} nuevos, ${txStats.updated} corregidos`,
+  )
 
   writeJson(paths.latest, { snapshot, diagnosis })
   writeJson(paths.diagnosis, diagnosis)
