@@ -5,9 +5,6 @@ name: Ingesta diaria
 # cubren las dos lecturas: 04:20 y 05:20 UTC para el ciclo de las 05:00, y
 # 16:20 y 17:20 UTC para la oferta adicional de las 17:00. Ejecutar de mas es
 # gratis en un repositorio publico, y el job es idempotente.
-#
-# Se dispara 20 minutos despues de cada evento para que Mister haya terminado de
-# resolver pujas y transferencias antes de mirar.
 on:
   schedule:
     - cron: '20 4,5,16,17 * * *'
@@ -18,14 +15,14 @@ on:
         type: boolean
         default: false
 
-# El cron de GitHub sufre retrasos de horas, asi que puede solaparse con un
-# disparo manual. Nunca dos ingestas a la vez contra la misma cuenta.
+# El cron de GitHub llega tarde con frecuencia y puede solaparse con un disparo
+# manual. Nunca dos ingestas a la vez contra la misma cuenta.
 concurrency:
   group: ingesta
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   ingest:
@@ -33,7 +30,22 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      # Los datos viven en un repositorio PRIVADO aparte. Contienen el saldo y
+      # los movimientos de la cuenta, y las estimaciones de saldo de los nueve
+      # rivales; la liga tiene desactivado ver el saldo ajeno, asi que
+      # publicarlos expondria justo lo que la liga decidio ocultar, y sobre
+      # gente que no ha elegido nada. El codigo sigue siendo publico porque el
+      # codigo no filtra nada.
+      - name: Descargar el repositorio de datos (privado)
+        if: ${{ !inputs.dry_run }}
+        uses: actions/checkout@v4
+        with:
+          repository: francisconaranjonrvz/mls-fantasy-data
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: data-repo
 
       - uses: pnpm/action-setup@v4
         with:
@@ -49,8 +61,7 @@ jobs:
       - name: Ingerir y analizar
         env:
           # Via principal: sesion capturada del navegador. Es la unica que
-          # funciona con cuentas que entran con Google, que no tienen
-          # contrasena nativa de Mister.
+          # funciona con cuentas que entran con Google.
           MISTER_SESSION: ${{ secrets.MISTER_SESSION }}
           # Alternativa, solo si la cuenta tiene contrasena propia de Mister.
           MISTER_EMAIL: ${{ secrets.MISTER_EMAIL }}
@@ -58,11 +69,12 @@ jobs:
           MISTER_LEAGUE_ID: ${{ secrets.MISTER_LEAGUE_ID }}
           # Ritmo prudente: la API no esta documentada y no publica limites.
           THROTTLE_MS: '2500'
-        run: |
-          node apps/scraper/src/main.ts ${{ inputs.dry_run && '--dry-run' || '' }}
+          DATA_DIR: ${{ inputs.dry_run && 'data' || 'data-repo/data' }}
+        run: node apps/scraper/src/main.ts ${{ inputs.dry_run && '--dry-run' || '' }}
 
-      - name: Commitear los datos
+      - name: Commitear los datos en el repositorio privado
         if: ${{ !inputs.dry_run }}
+        working-directory: data-repo
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -77,11 +89,15 @@ jobs:
             git push
           fi
 
+      # El diagnostico contiene saldos, asi que va al resumen del run y no al
+      # log. El resumen de un repo publico tambien es publico, de modo que solo
+      # se publica cuando la ingesta escribe en el repo privado; en dry-run se
+      # omite a proposito.
       - name: Publicar el diagnostico en el resumen del run
-        if: always()
+        if: ${{ always() && !inputs.dry_run }}
         run: |
-          if [ -f data/2026-27/diagnostico.md ]; then
-            cat data/2026-27/diagnostico.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f data-repo/data/2026-27/diagnostico.md ]; then
+            echo "Diagnostico generado. Disponible en el repositorio privado de datos." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "No se genero diagnostico en esta ejecucion." >> "$GITHUB_STEP_SUMMARY"
           fi

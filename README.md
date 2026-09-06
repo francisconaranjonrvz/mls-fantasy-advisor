@@ -69,7 +69,7 @@ apps/api                Cloudflare Worker. Sirve la web y expone /api/chat.
 packages/core           Tipos, esquemas zod y la configuracion real de la liga.
 packages/engine         Dominio puro, sin E/S, cubierto por tests.
 packages/mister-client  Cliente tipado de la API no documentada de Mister.
-data/2026-27            Snapshots append-only versionados en git.
+(los datos van a un repositorio privado aparte, no a este)
 ```
 
 **Principio rector: la IA nunca hace cuentas.** Todo lo numerico se calcula de forma
@@ -82,7 +82,7 @@ sabe hacer: interpretar noticias de lesiones, valorar rotaciones y explicar el p
 |---|---|---|
 | Scheduler | GitHub Actions en repo publico | Minutos ilimitados y gratuitos en repos publicos. |
 | Precision horaria | Cloudflare Cron Trigger que dispara `workflow_dispatch` | El cron de GitHub sufre retrasos de horas. |
-| Base de datos | El propio repo git | Unos pocos MB por temporada. Nada que se pause ni pida tarjeta. |
+| Base de datos | Un repo git privado aparte | Unos pocos MB por temporada. Nada que se pause ni pida tarjeta. |
 | Web y API | Un Cloudflare Worker con `assets` | Los assets estaticos no consumen cuota. |
 
 ## Puesta en marcha

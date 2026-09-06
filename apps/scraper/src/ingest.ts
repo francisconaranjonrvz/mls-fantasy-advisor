@@ -37,6 +37,20 @@ export interface IngestResult {
 const log = (msg: string) => console.log(`[ingesta] ${msg}`)
 
 /**
+ * Los logs de Actions de un repositorio publico son publicos.
+ *
+ * El saldo y los movimientos son justo lo que la liga mantiene oculto entre
+ * participantes, asi que no pueden acabar ahi. Se informa de que el dato se ha
+ * leido y de su orden de magnitud, que es lo util para depurar, sin publicar la
+ * cifra.
+ */
+function redacted(amount: number): string {
+  if (!Number.isFinite(amount)) return 'ilegible'
+  const digits = Math.abs(Math.round(amount)).toString().length
+  return `${amount < 0 ? 'negativo' : 'positivo'}, ${digits} digitos`
+}
+
+/**
  * Convierte a numero un campo de la API que puede venir en varias formas.
  *
  * Mister no es consistente: el valor de equipo llegaba como texto con puntos de
@@ -107,7 +121,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   try {
     const b = await api.getBalance()
     balance = b
-    log(`saldo ${b.balance}, gasto maximo ${b.maxDebt}`)
+    log(`saldo leido (${redacted(b.balance)}), ${b.history.length} movimientos`)
   } catch (err) {
     warn(`no se pudo leer el saldo: ${String(err)}`)
   }
@@ -174,7 +188,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     )
     self.maxDebt = reported > 0 ? reported : computed
     if (reported <= 0) {
-      log(`gasto maximo calculado (Mister no lo devolvio): ${self.maxDebt}`)
+      log(`gasto maximo calculado, Mister no lo devolvio (${redacted(self.maxDebt)})`)
     }
   } else {
     warn(

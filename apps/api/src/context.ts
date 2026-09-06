@@ -15,10 +15,20 @@
 export interface WorkerEnv {
   DATA_BASE_URL?: string
   SEASON_ID?: string
+  /**
+   * Repositorio PRIVADO donde viven los datos, como "usuario/repo".
+   *
+   * Los datos estan separados del codigo a proposito: contienen el saldo y los
+   * movimientos de la cuenta y las estimaciones de saldo de los rivales, que es
+   * justo lo que la liga mantiene oculto entre participantes. El codigo es
+   * publico porque no filtra nada.
+   */
+  DATA_REPO?: string
+  /** Token de solo lectura para ese repositorio. Secreto del Worker. */
+  DATA_REPO_TOKEN?: string
 }
 
-const DEFAULT_DATA_BASE =
-  'https://raw.githubusercontent.com/francisconaranjonrvz/mls-fantasy-advisor/main'
+const DEFAULT_DATA_REPO = 'francisconaranjonrvz/mls-fantasy-data'
 
 export interface LeagueData {
   diagnosis: DiagnosisShape
@@ -75,19 +85,62 @@ const fmt = (n: number): string => {
   return `${sign}${abs}`
 }
 
-export async function loadLeagueData(env: WorkerEnv): Promise<LeagueData> {
-  const base = env.DATA_BASE_URL ?? DEFAULT_DATA_BASE
-  const season = env.SEASON_ID ?? '2026-27'
+/**
+ * Lee un fichero de un repositorio privado por la API de GitHub.
+ *
+ * raw.githubusercontent.com no sirve para repos privados, asi que se usa el
+ * endpoint de contenidos con la cabecera "raw", que devuelve el fichero tal
+ * cual en lugar del JSON con metadatos y el contenido en base64.
+ */
+async function fetchPrivate(
+  repo: string,
+  token: string,
+  path: string,
+  cacheTtl: number,
+): Promise<Response> {
+  return fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github.raw',
+      'User-Agent': 'mls-fantasy-advisor',
+    },
+    cf: { cacheTtl, cacheEverything: true },
+  })
+}
 
+export async function loadLeagueData(env: WorkerEnv): Promise<LeagueData> {
+  const season = env.SEASON_ID ?? '2026-27'
+  const repo = env.DATA_REPO ?? DEFAULT_DATA_REPO
+  const token = env.DATA_REPO_TOKEN
+
+  if (!token) {
+    throw new Error(
+      'Falta DATA_REPO_TOKEN. Los datos viven en un repositorio privado, asi que el Worker ' +
+        'necesita un token de solo lectura: npx wrangler secret put DATA_REPO_TOKEN',
+    )
+  }
+
+  // Las reglas son publicas y estan en el repositorio de codigo; solo el
+  // diagnostico es privado.
   const [latestRes, rulesRes] = await Promise.all([
-    fetch(`${base}/data/${season}/diagnostico.json`, { cf: { cacheTtl: 300 } }),
-    fetch(`${base}/docs/REGLAS.md`, { cf: { cacheTtl: 3600 } }),
+    fetchPrivate(repo, token, `data/${season}/diagnostico.json`, 300),
+    fetch(
+      env.DATA_BASE_URL ??
+        'https://raw.githubusercontent.com/francisconaranjonrvz/mls-fantasy-advisor/main/docs/REGLAS.md',
+      { cf: { cacheTtl: 3600 } },
+    ),
   ])
 
+  if (latestRes.status === 404) {
+    throw new Error(
+      'Aun no hay diagnostico en el repositorio de datos. Lanza el workflow "Ingesta diaria" ' +
+        'sin dry-run para generar el primero.',
+    )
+  }
   if (!latestRes.ok) {
     throw new Error(
-      `No se pudo leer el diagnostico (${latestRes.status}). ` +
-        'Es posible que la ingesta aun no haya corrido nunca.',
+      `No se pudo leer el diagnostico (${latestRes.status}). Comprueba que DATA_REPO_TOKEN ` +
+        'tiene acceso de lectura al repositorio de datos.',
     )
   }
 

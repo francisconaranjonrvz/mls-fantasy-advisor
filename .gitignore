@@ -22,9 +22,12 @@ build/
 *.tsbuildinfo
 coverage/
 
-# Datos crudos sin sanear (capturas de depuracion que pueden llevar
-# emails o cookies). Los snapshots saneados SI se versionan.
-data/**/raw/
+# Los datos de la liga viven en un repositorio PRIVADO aparte. Contienen el
+# saldo y los movimientos de la cuenta y las estimaciones de saldo de los nueve
+# rivales, y la liga tiene desactivado ver el saldo ajeno: publicarlos aqui
+# expondria lo que la liga decidio ocultar, sobre gente que no ha elegido nada.
+# Este repositorio es publico y solo lleva codigo.
+data/
 *.har
 
 # Sistema / editor

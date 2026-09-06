@@ -86,7 +86,32 @@ Los secrets no se pasan a los workflows que vienen de un fork, asi que el
 repositorio puede ser publico sin riesgo. Trata `MISTER_SESSION` como una
 contrasena: da acceso a tu cuenta.
 
-## 2. Primera ingesta
+## 2. Repositorio de datos (privado)
+
+Los datos NO viven en este repositorio. Van a
+[`mls-fantasy-data`](https://github.com/francisconaranjonrvz/mls-fantasy-data),
+que es privado.
+
+El motivo: contienen tu saldo, tu historial de movimientos y las estimaciones de
+saldo de los nueve rivales. Tu liga tiene `Ver saldo de los rivales: No`, asi que
+publicarlos expondria justo lo que la liga decidio ocultar, y sobre personas que
+no han elegido nada. El codigo sigue publico porque el codigo no filtra nada, y
+es lo unico que le interesa a quien quiera leerlo.
+
+Hace falta un token para que el workflow pueda escribir ahi:
+
+1. `github.com/settings/personal-access-tokens/new` (fine-grained).
+2. Repository access: solo `mls-fantasy-data`.
+3. Permisos: `Contents: Read and write`. Nada mas.
+4. Guardalo en el repo de codigo como secret `DATA_REPO_TOKEN`.
+
+El Worker necesita el mismo token para leer, pero solo de lectura:
+
+```bash
+npx wrangler secret put DATA_REPO_TOKEN
+```
+
+## 3. Primera ingesta
 
 Ve a la pestaña `Actions`, elige el workflow **Ingesta diaria** y pulsa
 `Run workflow`. La primera vez conviene marcar `dry_run` para comprobar que el
@@ -119,7 +144,7 @@ ingesta. Si no tienes los valores exactos, pon tu mejor estimacion: el bloque
 «Fiabilidad de las estimaciones» del diagnostico te dira cuanto te desvias,
 porque compara la reconstruccion con tu saldo real, que si es dato cierto.
 
-## 3. Dashboard y chat (Cloudflare)
+## 4. Dashboard y chat (Cloudflare)
 
 El Worker sirve el dashboard y expone `/api/chat`. Hace falta porque la clave
 de la IA no puede viajar al navegador: cualquier clave que llegue al cliente es

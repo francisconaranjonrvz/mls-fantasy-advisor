@@ -245,13 +245,22 @@ export function renderConsoleSummary(d: Diagnosis): string {
   L.push(bar(64))
   L.push(`  Jornada ${d.currentJornada} | ${d.self.name} | ${d.self.points} pts | puesto ${d.self.rank}`)
   L.push(bar(64))
-  if (d.self.balance !== null) L.push(`  Saldo: ${formatShort(d.self.balance)}   Gasto max: ${formatShort(d.self.maxSpend ?? 0)}`)
+  // El resumen va al log de Actions, que en un repo publico es publico. Las
+  // cifras concretas viven en el informe completo, que se escribe en el
+  // repositorio privado de datos.
+  if (d.self.balance !== null) L.push('  Saldo y gasto maximo: en el informe privado')
   L.push(`  Rivales analizados: ${d.rivals.length}`)
   L.push(`  Jugadores tuyos en peligro: ${d.threats.filter((t) => t.advice.action === 'subir').length}`)
   L.push(`  Clausulazos viables: ${d.raids.length}`)
   L.push(`  Lastre a vender: ${d.deadweight.length}`)
   if (d.calibration) {
-    L.push(`  Calibracion del modelo: error ${formatShort(d.calibration.error)}`)
+    L.push(`  Calibracion: ${d.calibration.error === 0 ? 'exacta' : 'con desviacion'}`)
+  }
+  if (d.historyAudit) {
+    L.push(
+      `  Libro de movimientos: ${d.historyAudit.checked} auditados, ` +
+      `${d.historyAudit.mismatches} descuadres`,
+    )
   }
   if (d.warnings.length > 0) L.push(`  Avisos: ${d.warnings.length}`)
   L.push(bar(64))
