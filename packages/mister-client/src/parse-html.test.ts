@@ -171,3 +171,31 @@ describe('misc', () => {
     expect(parseMisterDate('ayer')).toBeNull()
   })
 })
+
+describe('deteccion del id de liga', () => {
+  /**
+   * Regresion de un fallo real en produccion. La regex antigua devolvia "1"
+   * porque enganchaba un id_competition que no era el de la liga. Ese "1"
+   * viajaba luego en la cabecera x-league de todas las llamadas a /ajax/sw, y
+   * el servidor no respondia con un error: devolvia vacio. El sintoma aparecia
+   * mucho mas lejos, como un catalogo sin jugadores y las diez plantillas
+   * rivales ilegibles, sin nada que apuntase a la causa.
+   */
+  it('descarta un id implausible en vez de propagarlo a la cabecera x-league', () => {
+    expect(extractLeagueId('<script>var cfg={"id_competition":1,"foo":2}</script>')).toBeNull()
+    expect(extractLeagueId('{"community":{"id":"3"}}')).toBeNull()
+  })
+
+  it('prefiere un id real aunque aparezca despues de uno implausible', () => {
+    const html = '<script>{"id_competition":1}</script><a href="/action/change?id_community=1263883">'
+    expect(extractLeagueId(html)).toBe('1263883')
+  })
+
+  it('lo encuentra en un enlace de cambio de liga', () => {
+    expect(extractLeagueId('<a href="/action/change?id_community=987654">Mi liga</a>')).toBe('987654')
+  })
+
+  it('devuelve null si no hay ninguno, para poder avisar en vez de inventarlo', () => {
+    expect(extractLeagueId('<html><body>nada</body></html>')).toBeNull()
+  })
+})

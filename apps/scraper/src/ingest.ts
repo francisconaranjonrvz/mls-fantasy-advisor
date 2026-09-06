@@ -34,8 +34,27 @@ export interface IngestResult {
 
 const log = (msg: string) => console.log(`[ingesta] ${msg}`)
 
+/**
+ * Anota un aviso Y lo imprime en el momento.
+ *
+ * El motivo es una leccion aprendida a golpes: los avisos se acumulaban en un
+ * array que solo se volcaba al final, y una ingesta que abortaba antes (por
+ * ejemplo al no validar el esquema) no llegaba nunca a imprimirlos. El
+ * resultado era un run rojo que decia que el snapshot era invalido, pero no
+ * QUE habia fallado ni POR QUE, con todas las causas reales enterradas.
+ *
+ * Degradar en vez de reventar solo es buena idea si la degradacion se ve.
+ */
+function makeWarn(warnings: string[]) {
+  return (msg: string): void => {
+    warnings.push(msg)
+    console.warn(`[ingesta] AVISO: ${msg}`)
+  }
+}
+
 export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   const warnings: string[] = []
+  const warn = makeWarn(warnings)
   const http = new MisterHttp({ minDelayMs: config.throttleMs, jitterMs: config.throttleMs })
 
   log('autenticando...')
@@ -44,7 +63,17 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     http,
   )
   if (config.leagueId) http.leagueId = config.leagueId
-  log(`autenticado por ${method} (liga ${http.leagueId ?? 'auto'})`)
+  log(`autenticado por ${method} (liga ${http.leagueId ?? 'sin detectar'})`)
+
+  // La cabecera x-league viaja en todas las llamadas a /ajax/sw. Si el id es
+  // erroneo el servidor no falla de forma evidente: devuelve vacio, y el
+  // sintoma aparece mucho despues como un catalogo sin jugadores.
+  if (!http.leagueId) {
+    warn(
+      'no se detecto el id de liga. Las llamadas a /ajax/sw pueden devolver vacio. ' +
+        'Definelo a mano en el secret MISTER_LEAGUE_ID.',
+    )
+  }
 
   const api = new MisterEndpoints(http)
 
@@ -59,11 +88,11 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     balance = b
     log(`saldo ${b.balance}, gasto maximo ${b.maxDebt}`)
   } catch (err) {
-    warnings.push(`no se pudo leer el saldo: ${String(err)}`)
+    warn(`no se pudo leer el saldo: ${String(err)}`)
   }
 
   const members = parseStandingsMembers(await api.getStandingsHtml())
-  if (members.length === 0) warnings.push('no se encontro ningun miembro en /standings')
+  if (members.length === 0) warn('no se encontro ningun miembro en /standings')
   log(`${members.length} miembros en la liga`)
 
   let players: Player[] = []
@@ -71,7 +100,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     players = (await api.getAllPlayers()).map(normalizePlayer).filter((p): p is Player => p !== null)
     log(`catalogo con ${players.length} jugadores`)
   } catch (err) {
-    warnings.push(`no se pudo leer el catalogo de jugadores: ${String(err)}`)
+    warn(`no se pudo leer el catalogo de jugadores: ${String(err)}`)
   }
 
   let market: MarketEntry[] = []
@@ -79,7 +108,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     market = parseMarket(await api.getMarketHtml())
     log(`${market.length} jugadores en el mercado`)
   } catch (err) {
-    warnings.push(`no se pudo leer el mercado: ${String(err)}`)
+    warn(`no se pudo leer el mercado: ${String(err)}`)
   }
 
   const managers: Manager[] = []
@@ -98,7 +127,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
       })
       log(`  ${member.slug}: ${squad.length} jugadores`)
     } catch (err) {
-      warnings.push(`no se pudo leer al manager ${member.slug}: ${String(err)}`)
+      warn(`no se pudo leer al manager ${member.slug}: ${String(err)}`)
     }
   }
 
@@ -114,10 +143,14 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     self.futureBalance = balance?.future
     self.maxDebt = balance?.maxDebt
   } else {
-    warnings.push('no se pudo identificar cual de los managers eres tu')
+    warn(
+      `no se pudo identificar cual de los ${managers.length} managers eres tu. ` +
+        `Tu plantilla (/team) tiene ${ownSquadRaw.length} jugadores y ninguna plantilla ` +
+        'rival coincide con ella. Si arriba fallaron los managers, esa es la causa.',
+    )
   }
 
-  const enrichedCount = await enrichClauses(api, managers, selfId, config, warnings)
+  const enrichedCount = await enrichClauses(api, managers, selfId, config, warn)
 
   let transactions: Transaction[] = []
   try {
@@ -128,13 +161,13 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     )
     log(`${transactions.length} movimientos en tu libro de balance`)
     if (transactions.length === 0) {
-      warnings.push(
+      warn(
         'el libro de balance vino vacio; es posible que /feed cargue el historial por XHR aparte. ' +
           'Ver docs/INCOGNITAS.md punto 5.',
       )
     }
   } catch (err) {
-    warnings.push(`no se pudo leer el libro de balance: ${String(err)}`)
+    warn(`no se pudo leer el libro de balance: ${String(err)}`)
   }
 
   const snapshot: LeagueSnapshot = {
@@ -164,7 +197,7 @@ async function enrichClauses(
   managers: Manager[],
   selfId: number,
   config: ScraperConfig,
-  warnings: string[],
+  warn: (msg: string) => void,
 ): Promise<number> {
   const own = managers.find((m) => m.id === selfId)?.squad ?? []
   const rivals = managers
@@ -191,19 +224,19 @@ async function enrichClauses(
       }
       if (info.injury) player.status = 'injured'
       done++
-    } catch {
+    } catch (err) {
       failures++
       // Un fallo suelto no debe tumbar la ingesta, pero muchos si son senal
       // de que la sesion ha caducado o el endpoint ha cambiado.
       if (failures > 20) {
-        warnings.push('demasiados fallos leyendo detalles de jugador; se aborta el enriquecido')
+        warn(`demasiados fallos leyendo detalles de jugador (ultimo: ${String(err)}); se aborta`)
         break
       }
     }
   }
 
   if (budget < queue.length) {
-    warnings.push(
+    warn(
       `solo se enriquecieron ${budget} de ${queue.length} jugadores por el limite ` +
         'MAX_PLAYER_DETAILS; el resto usa la clausula por defecto estimada',
     )

@@ -22,6 +22,21 @@ import { MisterSessionExpiredError } from '@mls/mister-client'
  *   --dry-run   ingiere y analiza, pero no escribe nada
  *   --demo      usa datos sinteticos, sin llamar a Mister
  */
+/**
+ * Vuelca los avisos acumulados.
+ *
+ * Se llama en TODAS las salidas, no solo en la de exito. Antes solo se
+ * imprimian al final del camino feliz, asi que una ingesta que abortaba por
+ * esquema invalido se llevaba a la tumba la explicacion de lo que habia
+ * fallado.
+ */
+function dumpWarnings(warnings: string[]): void {
+  if (warnings.length === 0) return
+  console.warn('')
+  console.warn(`[main] ${warnings.length} aviso(s) durante la ingesta:`)
+  for (const w of warnings) console.warn(`  - ${w}`)
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2)
   const demo = argv.includes('--demo')
@@ -43,6 +58,10 @@ async function main(): Promise<void> {
   if (!parsed.success) {
     console.error('[main] el snapshot no cumple el esquema:')
     console.error(JSON.stringify(parsed.error.issues.slice(0, 10), null, 2))
+    dumpWarnings(warnings)
+    console.error('')
+    console.error('Los avisos de arriba suelen explicar el fallo de esquema mejor que el')
+    console.error('propio error: si no se pudo leer ningun manager, selfId se queda a 0.')
     process.exitCode = 1
     return
   }
@@ -59,6 +78,7 @@ async function main(): Promise<void> {
   if (!sanity.ok) {
     console.error('[main] el snapshot no supera las comprobaciones de cordura:')
     for (const r of sanity.reasons) console.error(`  - ${r}`)
+    dumpWarnings(warnings)
     console.error('[main] no se escribe nada para no corromper el historial')
     process.exitCode = 1
     return
@@ -70,6 +90,7 @@ async function main(): Promise<void> {
   console.log('\n' + renderConsoleSummary(diagnosis) + '\n')
 
   if (config.dryRun) {
+    dumpWarnings(warnings)
     console.log('[main] --dry-run: no se escribe nada')
     return
   }
@@ -129,10 +150,7 @@ async function main(): Promise<void> {
   })
 
   console.log(`[main] escrito en ${paths.root}`)
-  if (warnings.length > 0) {
-    console.warn(`[main] ${warnings.length} aviso(s):`)
-    for (const w of warnings) console.warn(`  - ${w}`)
-  }
+  dumpWarnings(warnings)
 }
 
 main().catch((err) => {

@@ -54,14 +54,33 @@ export function extractXAuth(html: string): string | null {
  * Extrae el id de liga del HTML. Mister lo expone como x-league / id_competition.
  * Permite no tener que configurarlo a mano.
  */
+/**
+ * Los ids de liga de Mister son numeros largos (del orden de 1.000.000). Un "1"
+ * suelto no es un id: es un contador, una version o un indice cualquiera que la
+ * pagina tenia por ahi.
+ *
+ * Esta comprobacion no es cosmetica. La cabecera x-league viaja en todas las
+ * llamadas a /ajax/sw, asi que un id equivocado no falla de forma evidente:
+ * hace que el servidor devuelva vacio o rechace la peticion, y el sintoma
+ * aparece mucho mas lejos, en forma de catalogo vacio y plantillas rivales
+ * ilegibles.
+ */
+const MIN_PLAUSIBLE_LEAGUE_ID = 1000
+
+const LEAGUE_ID_PATTERNS = [
+  /[?&]id_community=(\d+)/g,
+  /"id_community"\s*:\s*"?(\d+)"?/g,
+  /"id_competition"\s*:\s*"?(\d+)"?/g,
+  /data-id_competition=["'](\d+)["']/g,
+  /"community"\s*:\s*\{[^}]*?"id"\s*:\s*"?(\d+)"?/g,
+]
+
 export function extractLeagueId(html: string): string | null {
-  for (const re of [
-    /"id_competition"\s*:\s*"?(\d+)"?/,
-    /data-id_competition=["'](\d+)["']/,
-    /"community"\s*:\s*\{[^}]*"id"\s*:\s*"?(\d+)"?/,
-  ]) {
-    const m = re.exec(html)
-    if (m?.[1]) return m[1]
+  for (const re of LEAGUE_ID_PATTERNS) {
+    for (const m of html.matchAll(re)) {
+      const raw = m[1]
+      if (raw && Number(raw) >= MIN_PLAUSIBLE_LEAGUE_ID) return raw
+    }
   }
   return null
 }
