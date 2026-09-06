@@ -116,8 +116,8 @@ async function main(): Promise<void> {
   console.log('='.repeat(72))
   try {
     const feedHtml = await api.getFeedHtml()
-    for (const sel of ['.player-row', '.btn-sw', 'li']) {
-      const skeletons = describeStructure(feedHtml, sel, 2)
+    for (const sel of ['.title', '.user', '.user-avatar--xs', '.news', '.activity', '.feed-item']) {
+      const skeletons = describeStructure(feedHtml, sel, 1)
       if (skeletons.length === 0) continue
       console.log(`
 >>> selector ${sel}`)
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
   console.log('FEED COMO PAGINA COMPLETA  (por si el historial llega en el HTML)')
   console.log('='.repeat(72))
   try {
-    const shape = describeHtml(await api.getFeedHtml(), SELECTORES)
+    const shape = describeHtml(await api.getFeedHtml(), SELECTORES, 45)
     console.log(`  /feed via GET: ${shape.bytes} bytes`)
     for (const m of shape.matches) {
       console.log(`     ${String(m.count).padStart(4)}  ${m.selector}`)
