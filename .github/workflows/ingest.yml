@@ -39,6 +39,38 @@ jobs:
       # publicarlos expondria justo lo que la liga decidio ocultar, y sobre
       # gente que no ha elegido nada. El codigo sigue siendo publico porque el
       # codigo no filtra nada.
+      # El checkout falla con un "Not Found" cripticoo cuando el token no
+      # alcanza el repositorio, y ese mensaje no distingue entre "no existe",
+      # "no tengo permiso" y "el token no lo ve". Esta comprobacion previa si
+      # lo distingue, y ahorra ejecuciones de diez minutos para descubrirlo.
+      - name: Comprobar el acceso al repositorio de datos
+        if: ${{ !inputs.dry_run }}
+        env:
+          TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
+          REPO: francisconaranjonrvz/mls-fantasy-data
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Falta el secret DATA_REPO_TOKEN."
+            exit 1
+          fi
+          CODE=$(curl -s -o /dev/null -w '%{http_code}'             -H "Authorization: Bearer $TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/$REPO")
+          echo "GET /repos/$REPO -> HTTP $CODE"
+          case "$CODE" in
+            200) echo "Acceso correcto." ;;
+            404)
+              echo "::error::El token NO ve $REPO. En los tokens fine-grained, 'Repository access' viene por defecto en 'Public repositories', y con eso un repositorio privado es invisible. Cambialo a 'Only select repositories' y marca mls-fantasy-data."
+              exit 1 ;;
+            403)
+              echo "::error::El token ve el repositorio pero le faltan permisos. Necesita 'Contents: Read and write'."
+              exit 1 ;;
+            401)
+              echo "::error::El token no es valido o ha caducado."
+              exit 1 ;;
+            *)
+              echo "::error::Respuesta inesperada de GitHub: HTTP $CODE"
+              exit 1 ;;
+          esac
+
       - name: Descargar el repositorio de datos (privado)
         if: ${{ !inputs.dry_run }}
         uses: actions/checkout@v4
