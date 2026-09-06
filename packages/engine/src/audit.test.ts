@@ -65,3 +65,59 @@ describe('auditoria del libro de movimientos', () => {
     expect(audit.finalBalance).toBeNull()
   })
 })
+
+describe('movimientos simultaneos', () => {
+  /**
+   * Reproduce datos reales de la liga. El ciclo de mercado de Mister resuelve
+   * varias compras a la vez y les pone la MISMA marca de tiempo, sin decir en
+   * que orden las aplico. Encadenar saldos uno a uno dentro de ese grupo es
+   * imposible por construccion: producia 17 descuadres falsos sobre un parseo
+   * que era correcto.
+   *
+   * Lo comprobable, y lo que importa, es que la suma de los importes del
+   * instante cuadre con el salto neto del saldo. Eso no depende del orden.
+   */
+  const instante = '2026-08-18T03:00:00Z'
+  const simultaneos = [
+    tx('2026-08-17T14:00:00Z', 'sale', M(1), M(12.472)),
+    // Tres compras del mismo ciclo. Suman -2.975.082 y el saldo cae de
+    // 12.472.000 a 9.496.918, exactamente esa cantidad.
+    tx(instante, 'purchase', -166_000, 12_306_000),
+    tx(instante, 'purchase', -1_219_462, 11_086_538),
+    tx(instante, 'purchase', -1_589_620, 9_496_918),
+  ]
+
+  it('no denuncia descuadres cuando el grupo cuadra en conjunto', () => {
+    expect(auditHistory(simultaneos).mismatches).toHaveLength(0)
+  })
+
+  it('el resultado no depende del orden en que lleguen los simultaneos', () => {
+    const alReves = [simultaneos[0]!, simultaneos[3]!, simultaneos[1]!, simultaneos[2]!]
+    expect(auditHistory(alReves).mismatches).toHaveLength(0)
+  })
+
+  it('sigue contando todos los movimientos, no solo los grupos', () => {
+    expect(auditHistory(simultaneos).checked).toBe(4)
+  })
+
+  it('SI denuncia el grupo cuando la suma no cuadra con el salto de saldo', () => {
+    const roto = [
+      tx('2026-08-17T14:00:00Z', 'sale', M(1), M(12.472)),
+      tx(instante, 'purchase', -166_000, 12_306_000),
+      // Importe manipulado: el grupo ya no explica la caida del saldo.
+      tx(instante, 'purchase', -1_000, 9_496_918),
+    ]
+    const audit = auditHistory(roto)
+    expect(audit.mismatches).toHaveLength(1)
+    expect(audit.mismatches[0]!.date).toBe(instante)
+  })
+
+  it('deriva el saldo inicial aunque el primer instante tenga varios movimientos', () => {
+    const empiezaEnGrupo = [
+      tx(instante, 'purchase', -166_000, 12_306_000),
+      tx(instante, 'purchase', -1_219_462, 11_086_538),
+    ]
+    // Cierre 11.086.538 menos lo movido (-1.385.462) = 12.472.000.
+    expect(auditHistory(empiezaEnGrupo).derivedInitialCash).toBe(12_472_000)
+  })
+})

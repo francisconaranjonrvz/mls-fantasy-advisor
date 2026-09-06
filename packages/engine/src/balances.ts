@@ -321,34 +321,88 @@ export function auditHistory(transactions: Transaction[]): HistoryAudit {
     .filter((t) => t.balanceAfter !== undefined)
     .sort((a, b) => a.date.localeCompare(b.date))
 
+  // Se audita por INSTANTE, no movimiento a movimiento.
+  //
+  // Mister resuelve varias operaciones a la vez (el ciclo de mercado de las
+  // 05:00 ejecuta todas las compras del dia de golpe) y les pone la misma marca
+  // de tiempo, sin decir en que orden las aplico internamente. Encadenar saldos
+  // uno a uno dentro de un grupo asi es imposible por construccion, y hacerlo
+  // producia 17 descuadres falsos sobre un parseo que era correcto.
+  //
+  // Lo que si es comprobable, y es lo que importa, es que la suma de los
+  // importes de un instante cuadre con el salto neto del saldo en ese instante.
+  // Eso es independiente del orden.
+  const groups: { date: string; movements: Transaction[] }[] = []
+  for (const t of chrono) {
+    const last = groups[groups.length - 1]
+    if (last && last.date === t.date) last.movements.push(t)
+    else groups.push({ date: t.date, movements: [t] })
+  }
+
   const mismatches: HistoryAudit['mismatches'] = []
 
-  for (let i = 1; i < chrono.length; i++) {
-    const prev = chrono[i - 1]!
-    const cur = chrono[i]!
-    const expected = prev.balanceAfter! + cur.amount
-    const diff = cur.balanceAfter! - expected
+  for (let i = 1; i < groups.length; i++) {
+    const prev = groups[i - 1]!
+    const cur = groups[i]!
+
+    // Saldo tras el grupo anterior: el mayor o menor no importa, pero dentro de
+    // un grupo el ultimo saldo es el que queda. Se identifica como el que no es
+    // punto de partida de ningun otro movimiento del grupo.
+    const before = closingBalanceOf(prev)
+    const after = closingBalanceOf(cur)
+    const moved = cur.movements.reduce((acc, m) => acc + m.amount, 0)
+    const diff = after - (before + moved)
+
     if (diff !== 0) {
+      const worst = [...cur.movements].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))[0]!
       mismatches.push({
         date: cur.date,
-        type: cur.type,
-        playerName: cur.playerName,
-        amount: cur.amount,
-        expected,
-        reported: cur.balanceAfter!,
+        type: cur.movements.length > 1 ? `${worst.type} (+${cur.movements.length - 1} mas)` : worst.type,
+        playerName: worst.playerName,
+        amount: moved,
+        expected: before + moved,
+        reported: after,
         diff,
       })
     }
   }
 
-  const first = chrono[0]
-  const last = chrono[chrono.length - 1]
+  const first = groups[0]
+  const last = groups[groups.length - 1]
 
   return {
     checked: chrono.length,
     mismatches,
-    // Antes del primer movimiento, el saldo era el resultante menos su importe.
-    derivedInitialCash: first ? first.balanceAfter! - first.amount : null,
-    finalBalance: last ? last.balanceAfter! : null,
+    // Antes del primer instante, el saldo era el de cierre menos lo que se
+    // movio en el.
+    derivedInitialCash: first
+      ? closingBalanceOf(first) - first.movements.reduce((a, m) => a + m.amount, 0)
+      : null,
+    finalBalance: last ? closingBalanceOf(last) : null,
   }
+}
+
+/**
+ * Saldo con el que cierra un instante.
+ *
+ * Dentro de un grupo simultaneo los saldos intermedios estan en orden
+ * desconocido, pero el de cierre es identificable: es el unico que no es el
+ * saldo de partida de ningun otro movimiento del grupo, es decir, aquel del que
+ * no se puede restar ningun importe del grupo para caer en otro saldo del
+ * grupo.
+ */
+function closingBalanceOf(group: { movements: Transaction[] }): number {
+  const balances = group.movements.map((m) => m.balanceAfter!)
+  if (balances.length === 1) return balances[0]!
+
+  const set = new Set(balances)
+  for (const m of group.movements) {
+    // Si al deshacer este movimiento caemos en otro saldo del grupo, este no es
+    // el cierre: hay un movimiento posterior.
+    const isIntermediate = group.movements.some(
+      (other) => other !== m && set.has(other.balanceAfter!) && other.balanceAfter! - other.amount === m.balanceAfter!,
+    )
+    if (!isIntermediate) return m.balanceAfter!
+  }
+  return balances[balances.length - 1]!
 }
