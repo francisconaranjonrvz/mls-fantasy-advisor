@@ -28,11 +28,41 @@ export interface BalanceData {
   balance?: number
   future?: number
   max_debt?: number
+  /**
+   * Libro de movimientos completo.
+   *
+   * Es el hallazgo que hace viable la reconstruccion de saldos rivales. El
+   * historial NO esta en el HTML de /feed, como sugiere la documentacion de la
+   * comunidad: viene aqui, en JSON, junto al saldo. Mucho mas fiable que
+   * raspar marcado.
+   */
+  history?: RawBalanceMovement[]
+}
+
+/** Una entrada del libro de movimientos, tal cual la devuelve Mister. */
+export interface RawBalanceMovement {
+  /** Marca de tiempo unix, preferible a la fecha ya formateada. */
+  ts?: number
+  /** Fecha formateada, "06/09/2026 - 00:11". */
+  adate?: string
+  /** "hace 18 horas". Solo presentacion. */
+  rdate?: string
+  /** Puede traer HTML: "Roberto Fernandez <span>a</span> Rxul_2504". */
+  reason?: string
+  /** "+" o "-". El importe viene siempre en positivo. */
+  sign?: string
+  amount?: number
+  /** Etiqueta en el idioma de la cuenta: "Venta por clausula", "Compra"... */
+  type?: string
+  balance?: number
+  [k: string]: unknown
 }
 
 export interface BalanceInfo {
   /** Saldo disponible ahora mismo. */
   balance: Euros
+  /** Movimientos, del mas reciente al mas antiguo. */
+  history: RawBalanceMovement[]
   /** Saldo previsto incluyendo ventas pendientes de ejecutarse. */
   future: Euros
   /** Gasto maximo: saldo + 25% del valor de equipo en esta liga. */
@@ -128,6 +158,7 @@ export class MisterEndpoints {
       balance: toInt(d.balance),
       future: toInt(d.future),
       maxDebt: toInt(d.max_debt),
+      history: Array.isArray(d.history) ? d.history : [],
     }
   }
 

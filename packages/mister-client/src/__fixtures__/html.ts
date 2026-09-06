@@ -38,13 +38,13 @@ export const TEAM_HTML = `
 export const MARKET_HTML = `
 <ul id="list-on-sale">
   <li data-price="8400000" data-position="3" data-owner="0">
-    <div class="player-pic" data-id_player="10024"><img src="/a.png"></div>
+    <div class="player-avatar" data-id_player="10024"><img src="/a.png"></div>
     <div class="name">Mauro Arambarri</div>
     <div class="points">31</div>
     <button class="btn-bid" data-id_market="m-771" data-active="1"></button>
   </li>
   <li data-price="21000000" data-position="4" data-owner="4412">
-    <div class="player-pic" data-id_player="12902"><img src="/b.png"></div>
+    <div class="player-avatar" data-id_player="12902"><img src="/b.png"></div>
     <div class="name">Raul de Tomas</div>
     <div class="points">40</div>
     <button class="btn-bid" data-id_market="m-772" data-active="1"></button>

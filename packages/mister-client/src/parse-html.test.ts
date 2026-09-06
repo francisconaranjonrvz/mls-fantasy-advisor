@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parsePlayerRows, parseMarket, parseStandingsMembers, parseBalanceHistory,
   parseReason, parseTransactionType, parseMisterDate, parseCurrentJornada,
-  toTransactions,
+  toTransactions, movementsToTransactions, stripTags,
 } from './parse-html.ts'
 import { extractXAuth, extractLeagueId } from './auth.ts'
 import {
@@ -222,5 +222,90 @@ describe('numero de jornada', () => {
 
   it('no acepta una jornada 39, que no existe', () => {
     expect(parseCurrentJornada('<span>JORNADA 39</span>')).toBeNull()
+  })
+})
+
+describe('libro de movimientos en JSON', () => {
+  /** Forma real devuelta por /ajax/sw/balance, incluido el <span> en reason. */
+  const MOVIMIENTOS = [
+    {
+      ts: 1788646303,
+      adate: '06/09/2026 - 00:11',
+      reason: 'Roberto Fernández <span>a</span> Rxul_2504',
+      sign: '+',
+      amount: 11872500,
+      type: 'Venta por cláusula',
+      balance: 11908692,
+    },
+    {
+      ts: 1788500000,
+      reason: 'Lamine Yamal <span>a</span> Mister',
+      sign: '-',
+      amount: 14200000,
+      type: 'Compra',
+      balance: 36192,
+    },
+  ]
+
+  it('aplica el signo, que viene aparte del importe', () => {
+    const txs = movementsToTransactions(MOVIMIENTOS, 4410)
+    expect(txs[0]!.amount).toBe(11_872_500)
+    expect(txs[1]!.amount).toBe(-14_200_000)
+  })
+
+  it('limpia el HTML incrustado en el motivo', () => {
+    expect(stripTags('Roberto Fernández <span>a</span> Rxul_2504'))
+      .toBe('Roberto Fernández a Rxul_2504')
+  })
+
+  it('extrae jugador y contraparte del motivo ya limpio', () => {
+    const txs = movementsToTransactions(MOVIMIENTOS, 4410, (n) =>
+      n === 'Rxul_2504' ? 999 : undefined,
+    )
+    expect(txs[0]!.playerName).toBe('Roberto Fernández')
+    expect(txs[0]!.counterpartyId).toBe(999)
+  })
+
+  it('trata Mister como mercado y no como rival', () => {
+    const txs = movementsToTransactions(MOVIMIENTOS, 4410, () => 123)
+    expect(txs[1]!.counterpartyId).toBeUndefined()
+  })
+
+  it('traduce las etiquetas en espanol de Mister', () => {
+    const txs = movementsToTransactions(MOVIMIENTOS, 4410)
+    expect(txs[0]!.type).toBe('buyout_sale')
+    expect(txs[1]!.type).toBe('purchase')
+  })
+
+  it('prefiere la marca de tiempo unix a la fecha ya formateada', () => {
+    const txs = movementsToTransactions(MOVIMIENTOS, 4410)
+    expect(txs[0]!.date).toBe(new Date(1788646303 * 1000).toISOString())
+  })
+
+  it('conserva el saldo resultante, que permite verificar la reconstruccion', () => {
+    expect(movementsToTransactions(MOVIMIENTOS, 4410)[0]!.balanceAfter).toBe(11_908_692)
+  })
+})
+
+describe('mercado: donde vive el id del jugador', () => {
+  /**
+   * Regresion. El parser buscaba el id en .player-pic y el mercado salia
+   * siempre vacio, aunque la pagina real traia 43 jugadores. El contenedor
+   * existia; el atributo estaba en .player-avatar, como en el resto de vistas.
+   */
+  it('lo encuentra en .player-avatar', () => {
+    const html = '<ul id="list-on-sale"><li data-price="8400000">' +
+      '<div class="player-avatar" data-id_player="777"></div></li></ul>'
+    expect(parseMarket(html)[0]?.playerId).toBe(777)
+  })
+
+  it('sigue aceptando .player-pic, por si convive el marcado antiguo', () => {
+    const html = '<ul id="list-on-sale"><li data-price="100">' +
+      '<div class="player-pic" data-id_player="888"></div></li></ul>'
+    expect(parseMarket(html)[0]?.playerId).toBe(888)
+  })
+
+  it('ignora una fila sin id en vez de inventarse uno', () => {
+    expect(parseMarket('<ul id="list-on-sale"><li data-price="100"></li></ul>')).toHaveLength(0)
   })
 })

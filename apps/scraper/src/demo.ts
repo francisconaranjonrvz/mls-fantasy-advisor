@@ -148,7 +148,7 @@ export function buildDemoSnapshot(): DemoData {
   return {
     snapshot,
     transactions,
-    balance: { balance: saldo, future: saldo, maxDebt: saldo + M(30) },
+    balance: { balance: saldo, future: saldo, maxDebt: saldo + M(30), history: [] },
     warnings: ['datos sinteticos de demostracion: no reflejan la liga real'],
     enrichedCount: players.length,
     baseline: {

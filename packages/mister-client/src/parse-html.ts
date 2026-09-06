@@ -99,7 +99,13 @@ export function parseMarket(html: string): MarketEntry[] {
 
   $('#list-on-sale li').each((_i, el) => {
     const node = $(el)
-    const idRaw = node.find('.player-pic').first().attr('data-id_player')
+    // El id vive en .player-avatar, igual que en el resto de vistas. Buscarlo
+    // en .player-pic hacia que el mercado saliera siempre vacio pese a que la
+    // pagina traia 43 jugadores: el contenedor existia, el id no estaba ahi.
+    const idRaw =
+      node.find('.player-avatar').first().attr('data-id_player') ??
+      node.find('.player-pic').first().attr('data-id_player') ??
+      node.attr('data-id_player')
     const id = idRaw ? Number.parseInt(idRaw, 10) : NaN
     if (!Number.isFinite(id) || id <= 0) return
 
@@ -349,4 +355,61 @@ export function describeHtml(html: string, selectors: string[], topN = 12): Html
       .slice(0, topN)
       .map(([name, count]) => ({ name, count })),
   }
+}
+
+// ---------------------------------------------------------------------------
+// Libro de movimientos en JSON
+// ---------------------------------------------------------------------------
+
+/** Quita etiquetas HTML de un texto. Mister mete <span> dentro de `reason`. */
+export function stripTags(text: string): string {
+  return text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Convierte el libro de movimientos que devuelve /ajax/sw/balance.
+ *
+ * Se prefiere esta via al raspado del HTML de /feed por tres motivos: el
+ * importe y el signo vienen separados y sin formatear, la marca de tiempo es
+ * unix en vez de texto localizado, y no depende de que no cambie el marcado.
+ */
+export function movementsToTransactions(
+  movements: {
+    ts?: number
+    adate?: string
+    reason?: string
+    sign?: string
+    amount?: number
+    type?: string
+    balance?: number
+  }[],
+  managerId: number,
+  resolveManager?: (name: string) => number | undefined,
+): Transaction[] {
+  const out: Transaction[] = []
+
+  for (const m of movements) {
+    const magnitude = Math.abs(Math.round(Number(m.amount ?? 0)))
+    if (!Number.isFinite(magnitude)) continue
+
+    const { playerName, counterpartyName } = parseReason(stripTags(m.reason ?? ''))
+
+    out.push({
+      date: isoFromMovement(m),
+      type: parseTransactionType(m.type ?? ''),
+      // El importe llega siempre positivo; el signo va aparte.
+      amount: m.sign === '-' ? -magnitude : magnitude,
+      managerId,
+      counterpartyId: counterpartyName ? resolveManager?.(counterpartyName) : undefined,
+      playerName,
+      balanceAfter: typeof m.balance === 'number' ? Math.round(m.balance) : undefined,
+    })
+  }
+
+  return out
+}
+
+function isoFromMovement(m: { ts?: number; adate?: string }): string {
+  if (typeof m.ts === 'number' && m.ts > 0) return new Date(m.ts * 1000).toISOString()
+  return parseMisterDate(m.adate ?? '') ?? ''
 }

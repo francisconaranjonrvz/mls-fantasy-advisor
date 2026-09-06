@@ -1,12 +1,13 @@
 import {
   MisterHttp, MisterEndpoints, authenticate, parsePlayerRows, parseSquad, parseMarket,
-  parseStandingsMembers, parseCurrentJornada, parseBalanceHistory, toTransactions,
+  parseStandingsMembers, parseCurrentJornada, movementsToTransactions,
   readClause, readPurchasePrice,
 } from '@mls/mister-client'
 import { MLS_LEAGUE, parseEuros } from '@mls/core'
 import type {
   LeagueSnapshot, Manager, Player, Transaction, MarketEntry,
 } from '@mls/core'
+import type { BalanceInfo } from '@mls/mister-client'
 import type { ScraperConfig } from './config.ts'
 
 /**
@@ -28,7 +29,7 @@ import type { ScraperConfig } from './config.ts'
 export interface IngestResult {
   snapshot: LeagueSnapshot
   transactions: Transaction[]
-  balance: { balance: number; future: number; maxDebt: number } | null
+  balance: BalanceInfo | null
   warnings: string[]
   enrichedCount: number
 }
@@ -185,22 +186,19 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
 
   const enrichedCount = await enrichClauses(api, managers, selfId, config, warn)
 
-  let transactions: Transaction[] = []
-  try {
-    const feedHtml = await api.getFeedHtml()
-    const byName = new Map(managers.map((m) => [m.name.toLowerCase(), m.id]))
-    transactions = toTransactions(parseBalanceHistory(feedHtml), selfId, (n) =>
-      byName.get(n.toLowerCase()),
-    )
-    log(`${transactions.length} movimientos en tu libro de balance`)
-    if (transactions.length === 0) {
-      warn(
-        'el libro de balance vino vacio; es posible que /feed cargue el historial por XHR aparte. ' +
-          'Ver docs/INCOGNITAS.md punto 5.',
-      )
-    }
-  } catch (err) {
-    warn(`no se pudo leer el libro de balance: ${String(err)}`)
+  // El libro de movimientos NO esta en el HTML de /feed, como sugiere la
+  // documentacion de la comunidad: viene en el mismo JSON que el saldo. Es
+  // ademas mejor fuente, porque trae el importe sin formatear, el signo
+  // aparte y la marca de tiempo unix.
+  const byName = new Map(managers.map((m) => [m.name.toLowerCase(), m.id]))
+  const transactions: Transaction[] = movementsToTransactions(
+    balance?.history ?? [],
+    selfId,
+    (n) => byName.get(n.toLowerCase()),
+  )
+  log(`${transactions.length} movimientos en tu libro de balance`)
+  if (transactions.length === 0) {
+    warn('el libro de movimientos vino vacio: sin el no se pueden reconstruir los saldos rivales')
   }
 
   const snapshot: LeagueSnapshot = {
