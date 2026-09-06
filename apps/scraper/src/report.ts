@@ -47,6 +47,34 @@ export function renderDiagnosis(d: Diagnosis): string {
     L.push('')
   }
 
+  // --- Auditoria del libro ---
+  if (d.historyAudit) {
+    const a = d.historyAudit
+    L.push('## Coherencia del libro de movimientos')
+    L.push('')
+    if (a.mismatches === 0) {
+      L.push(
+        `Los ${a.checked} movimientos con saldo cuadran uno a uno con el saldo que declara ` +
+        'Mister. La logica de sumar movimientos es correcta, asi que aplicarla a los rivales ' +
+        'es fiable.',
+      )
+    } else {
+      L.push(
+        `**${a.mismatches} de ${a.checked} movimientos no cuadran** con el saldo declarado por ` +
+        'Mister. Eso significa que algun tipo o signo se esta interpretando mal, y las ' +
+        'estimaciones de saldo rival heredan ese error.',
+      )
+      if (a.worst) {
+        L.push('')
+        L.push(
+          `El mayor descuadre es de ${formatShort(a.worst.diff)} en un movimiento de tipo ` +
+          `\`${a.worst.type}\`${a.worst.playerName ? ` (${a.worst.playerName})` : ''}.`,
+        )
+      }
+    }
+    L.push('')
+  }
+
   // --- Rivales ---
   L.push('## Rivales: saldo estimado y capacidad de robo')
   L.push('')

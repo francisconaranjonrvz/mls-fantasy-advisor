@@ -279,3 +279,76 @@ export function spendingCapacity(
     scenario === 'worst' ? estimate.high : scenario === 'best' ? estimate.low : estimate.estimate
   return Math.round(cash + teamValue * config.maxDebtPctOfTeamValue)
 }
+
+// ---------------------------------------------------------------------------
+// Auditoria del libro de movimientos
+// ---------------------------------------------------------------------------
+
+export interface HistoryAudit {
+  /** Movimientos con saldo resultante, que son los auditables. */
+  checked: number
+  /** Movimientos en los que el saldo resultante no cuadra con el anterior mas el importe. */
+  mismatches: {
+    date: string
+    type: string
+    playerName?: string | undefined
+    amount: Euros
+    expected: Euros
+    reported: Euros
+    diff: Euros
+  }[]
+  /** Saldo antes del primer movimiento conocido, si se puede derivar. */
+  derivedInitialCash: Euros | null
+  /** Saldo tras el ultimo movimiento, segun el propio libro. */
+  finalBalance: Euros | null
+}
+
+/**
+ * Comprueba el libro de movimientos contra si mismo.
+ *
+ * Mister publica el saldo resultante de cada movimiento, asi que el historial
+ * lleva su propia suma de verificacion: el saldo tras un movimiento tiene que
+ * ser el anterior mas el importe. Si no cuadra, el error esta en como
+ * interpretamos el signo o el tipo, no en el dato.
+ *
+ * Es una prueba mas fuerte que comparar solo el saldo final, porque senala
+ * QUE movimiento concreto se interpreta mal en vez de dar una diferencia
+ * global sin pista de donde viene.
+ */
+export function auditHistory(transactions: Transaction[]): HistoryAudit {
+  // Del mas antiguo al mas reciente, que es como se acumula un saldo.
+  const chrono = [...transactions]
+    .filter((t) => t.balanceAfter !== undefined)
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  const mismatches: HistoryAudit['mismatches'] = []
+
+  for (let i = 1; i < chrono.length; i++) {
+    const prev = chrono[i - 1]!
+    const cur = chrono[i]!
+    const expected = prev.balanceAfter! + cur.amount
+    const diff = cur.balanceAfter! - expected
+    if (diff !== 0) {
+      mismatches.push({
+        date: cur.date,
+        type: cur.type,
+        playerName: cur.playerName,
+        amount: cur.amount,
+        expected,
+        reported: cur.balanceAfter!,
+        diff,
+      })
+    }
+  }
+
+  const first = chrono[0]
+  const last = chrono[chrono.length - 1]
+
+  return {
+    checked: chrono.length,
+    mismatches,
+    // Antes del primer movimiento, el saldo era el resultante menos su importe.
+    derivedInitialCash: first ? first.balanceAfter! - first.amount : null,
+    finalBalance: last ? last.balanceAfter! : null,
+  }
+}

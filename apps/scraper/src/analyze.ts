@@ -4,9 +4,9 @@ import {
 import {
   buildValuationContext, reconstructBalance, exactBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
-  optimizeLineup, bestSubstitution,
+  optimizeLineup, bestSubstitution, auditHistory,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
-  type Calibration, type LineupPlan, type SubstitutionAdvice,
+  type Calibration, type LineupPlan, type SubstitutionAdvice, type HistoryAudit,
 } from '@mls/engine'
 
 /**
@@ -47,6 +47,19 @@ export interface Diagnosis {
   rivals: RivalView[]
   /** Contraste de la reconstruccion contra tu saldo real. */
   calibration: Calibration | null
+  /**
+   * Auditoria del libro de movimientos contra su propio saldo resultante.
+   *
+   * Es la prueba de que la logica de sumar movimientos es correcta, y por tanto
+   * de que se puede aplicar a los rivales. Mas util que la calibracion global
+   * porque senala QUE movimiento se interpreta mal, no solo cuanto falla.
+   */
+  historyAudit: {
+    checked: number
+    mismatches: number
+    derivedInitialCash: Euros | null
+    worst: { date: string; type: string; playerName?: string | undefined; diff: Euros } | null
+  } | null
   threats: ThreatAssessment[]
   /**
    * Jugadores que nadie puede robarte con seguridad, pero cuya seguridad
@@ -158,6 +171,11 @@ export function analyze(
 
   // Calibracion: reconstruimos TU saldo y lo comparamos con el real. Es la
   // unica forma honesta de saber si el metodo aplicado a los rivales vale.
+  // La auditoria va primero: si la suma de movimientos no cuadra consigo misma,
+  // no tiene sentido confiar en ella para estimar los saldos rivales.
+  const ownTxsAll = self ? (txByManager.get(self.id) ?? []) : []
+  const audit: HistoryAudit | null = ownTxsAll.length > 0 ? auditHistory(ownTxsAll) : null
+
   let calibration: Calibration | null = null
   if (self && self.balance !== undefined) {
     const ownTxs = txByManager.get(self.id) ?? []
@@ -165,7 +183,12 @@ export function analyze(
       const reconstructed = reconstructBalance(
         {
           managerId: self.id,
-          initialSquadValue: initialSquadValue(self.id),
+          // El propio libro dice cual era el saldo antes del primer movimiento,
+          // asi que no hace falta suponer el valor de la plantilla inicial.
+          initialSquadValue:
+            audit?.derivedInitialCash !== null && audit?.derivedInitialCash !== undefined
+              ? config.initialBudget - audit.derivedInitialCash
+              : initialSquadValue(self.id),
           transactions: ownTxs,
           historyComplete: true,
           teamValue: self.teamValue,
@@ -286,6 +309,22 @@ export function analyze(
     },
     rivals: rivals.sort((a, b) => b.threatCapacity - a.threatCapacity),
     calibration,
+    historyAudit: audit
+      ? {
+          checked: audit.checked,
+          mismatches: audit.mismatches.length,
+          derivedInitialCash: audit.derivedInitialCash,
+          worst:
+            audit.mismatches.length > 0
+              ? (() => {
+                  const w = [...audit.mismatches].sort(
+                    (a, b) => Math.abs(b.diff) - Math.abs(a.diff),
+                  )[0]!
+                  return { date: w.date, type: w.type, playerName: w.playerName, diff: w.diff }
+                })()
+              : null,
+        }
+      : null,
     threats: threats.filter((t) => t.risk !== 'ninguno' || t.advice.action === 'cebo'),
     uncertainCount: threats.filter((t) => t.advice.action === 'incierto').length,
     protection,
