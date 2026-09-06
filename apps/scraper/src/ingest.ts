@@ -3,7 +3,7 @@ import {
   parseStandingsMembers, parseCurrentJornada, parseBalanceHistory, toTransactions,
   readClause, readPurchasePrice,
 } from '@mls/mister-client'
-import { MLS_LEAGUE } from '@mls/core'
+import { MLS_LEAGUE, parseEuros } from '@mls/core'
 import type {
   LeagueSnapshot, Manager, Player, Transaction, MarketEntry,
 } from '@mls/core'
@@ -34,6 +34,25 @@ export interface IngestResult {
 }
 
 const log = (msg: string) => console.log(`[ingesta] ${msg}`)
+
+/**
+ * Convierte a numero un campo de la API que puede venir en varias formas.
+ *
+ * Mister no es consistente: el valor de equipo llegaba como texto con puntos de
+ * millar ("62.400.000"), y Number() sobre eso da NaN. Ese NaN se propagaba
+ * silenciosamente hasta el calculo del gasto maximo y tumbaba la validacion del
+ * snapshot entero, con un mensaje que hablaba de tipos y no de la causa.
+ *
+ * Devuelve el respaldo cuando el valor no es interpretable, nunca NaN.
+ */
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value) : fallback
+  if (typeof value === 'string') {
+    const parsed = parseEuros(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+  return fallback
+}
 
 /**
  * Anota un aviso Y lo imprime en el momento.
@@ -121,9 +140,11 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
         id: member.id,
         name: detail.user?.name ?? member.slug,
         slug: member.slug,
-        points: Math.round(Number(detail.season?.points ?? 0)),
-        average: Number(detail.season?.avg ?? 0),
-        teamValue: Math.round(Number(detail.value ?? squad.reduce((a, p) => a + p.value, 0))),
+        points: toNumber(detail.season?.points),
+        average: toNumber(detail.season?.avg),
+        // Si Mister no da un valor de equipo utilizable, la suma de la plantilla
+        // es una aproximacion perfectamente valida.
+        teamValue: toNumber(detail.value, squad.reduce((a, p) => a + p.value, 0)),
         squad,
       })
       log(`  ${member.slug}: ${squad.length} jugadores`)
