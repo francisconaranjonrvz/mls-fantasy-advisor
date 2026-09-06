@@ -3,6 +3,7 @@ import {
   parseStandingsMembers, parseCurrentJornada, parseBalanceHistory, toTransactions,
   readClause, readPurchasePrice,
 } from '@mls/mister-client'
+import { MLS_LEAGUE } from '@mls/core'
 import type {
   LeagueSnapshot, Manager, Player, Transaction, MarketEntry,
 } from '@mls/core'
@@ -115,7 +116,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   for (const member of members) {
     try {
       const detail = await api.getManager(member.id)
-      const squad = parseSquad(await api.getUserSquadHtml(member.id), member.id)
+      const squad = parseSquad(await api.getUserSquadHtml(member.id, member.slug), member.id)
       managers.push({
         id: member.id,
         name: detail.user?.name ?? member.slug,
@@ -141,7 +142,18 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     selfId = self.id
     self.balance = balance?.balance
     self.futureBalance = balance?.future
-    self.maxDebt = balance?.maxDebt
+
+    // Mister no siempre devuelve max_debt, y contra la cuenta real venia a
+    // cero. Es calculable: saldo mas el margen de deuda sobre el valor de
+    // equipo, que en esta liga es el 25%.
+    const reported = balance?.maxDebt ?? 0
+    const computed = Math.round(
+      (balance?.balance ?? 0) + self.teamValue * MLS_LEAGUE.maxDebtPctOfTeamValue,
+    )
+    self.maxDebt = reported > 0 ? reported : computed
+    if (reported <= 0) {
+      log(`gasto maximo calculado (Mister no lo devolvio): ${self.maxDebt}`)
+    }
   } else {
     warn(
       `no se pudo identificar cual de los ${managers.length} managers eres tu. ` +

@@ -266,11 +266,19 @@ export class MisterHttp {
   }
 
   /**
+   * Numero maximo de redirecciones a seguir. Mister redirige a URLs canonicas
+   * (por ejemplo /users/{id} hacia /users/{id}/{slug}), y tratar eso como error
+   * hacia fallar peticiones perfectamente validas. Las redirecciones hacia la
+   * pantalla de acceso las intercepta antes assertNotExpired.
+   */
+  private static readonly MAX_REDIRECTS = 3
+
+  /**
    * Trae una pagina como fragmento HTML parcial.
    * Mister devuelve el fragmento (en vez de la pagina entera) cuando se pide
    * por POST con cuerpo vacio, que es como navega su propia SPA.
    */
-  async fetchPartial(path: string): Promise<string> {
+  async fetchPartial(path: string, redirectsLeft = MisterHttp.MAX_REDIRECTS): Promise<string> {
     await this.waitTurn()
     const res = await fetch(`${MISTER_BASE}${path}`, {
       method: 'POST',
@@ -284,10 +292,34 @@ export class MisterHttp {
     })
     this.absorbSetCookie(res)
     this.assertNotExpired(res, path)
+
+    // Redireccion normal (tipicamente hacia la URL canonica). Seguirla en vez
+    // de tratarla como error: /users/{id} redirige a /users/{id}/{slug}.
+    const next = this.redirectTarget(res)
+    if (next && redirectsLeft > 0) {
+      return this.fetchPartial(next, redirectsLeft - 1)
+    }
+
     const text = await res.text()
     if (!res.ok) throw new MisterHttpError(res.status, path, text)
     return text
   }
+
+  /** Ruta relativa a la que redirige una respuesta, si es una redireccion. */
+  private redirectTarget(res: Response): string | null {
+    if (res.status < 300 || res.status >= 400) return null
+    const location = res.headers.get('location')
+    if (!location) return null
+    try {
+      const url = new URL(location, MISTER_BASE)
+      // Solo se siguen redirecciones dentro del propio Mister.
+      if (url.origin !== MISTER_BASE) return null
+      return url.pathname + url.search
+    } catch {
+      return null
+    }
+  }
+
 
   /** GET de una pagina completa. Necesario para raspar el token X-Auth. */
   async fetchPage(path: string): Promise<string> {

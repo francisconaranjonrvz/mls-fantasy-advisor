@@ -210,8 +210,16 @@ export class MisterEndpoints {
     return this.http.fetchPartial('/market')
   }
 
-  getUserSquadHtml(userId: number): Promise<string> {
-    return this.http.fetchPartial(`/users/${userId}`)
+  /**
+   * Plantilla de un rival.
+   *
+   * La URL lleva slug: /users/{id}/{slug}. Sin el, Mister responde 302 hacia la
+   * forma canonica, asi que pedir solo /users/{id} fallaba para los diez
+   * rivales a la vez. El slug sale de los enlaces de /standings.
+   */
+  getUserSquadHtml(userId: number, slug?: string): Promise<string> {
+    const path = slug ? `/users/${userId}/${slug}` : `/users/${userId}`
+    return this.http.fetchPartial(path)
   }
 
   /** Feed de actividad. Con ancla #balance trae tu libro de movimientos. */
