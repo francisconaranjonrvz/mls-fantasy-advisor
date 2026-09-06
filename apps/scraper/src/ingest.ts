@@ -1,6 +1,7 @@
 import {
   MisterHttp, MisterEndpoints, authenticate, parsePlayerRows, parseSquad, parseMarket,
   parseStandingsMembers, parseCurrentJornada, movementsToTransactions,
+  parseFeedTransfers, feedTransfersToTransactions,
   readClause, readPurchasePrice,
 } from '@mls/mister-client'
 import { MLS_LEAGUE, parseEuros } from '@mls/core'
@@ -28,7 +29,10 @@ import type { ScraperConfig } from './config.ts'
 
 export interface IngestResult {
   snapshot: LeagueSnapshot
+  /** Libro propio, autoritativo: trae fecha exacta y saldo resultante. */
   transactions: Transaction[]
+  /** Movimientos de rivales deducidos del feed. Sin fecha exacta ni saldo. */
+  rivalTransactions: Transaction[]
   balance: BalanceInfo | null
   warnings: string[]
   enrichedCount: number
@@ -90,6 +94,7 @@ function makeWarn(warnings: string[]) {
 export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   const warnings: string[] = []
   const warn = makeWarn(warnings)
+  const snapshotAt = new Date().toISOString()
   const http = new MisterHttp({ minDelayMs: config.throttleMs, jitterMs: config.throttleMs })
 
   log('autenticando...')
@@ -215,8 +220,47 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     warn('el libro de movimientos vino vacio: sin el no se pueden reconstruir los saldos rivales')
   }
 
+  // --- Movimientos de los RIVALES, desde el feed de actividad ---
+  //
+  // /ajax/sw/balance devuelve solo el libro propio, asi que sin esto los saldos
+  // ajenos no se pueden reconstruir y todo el analisis de clausulas se queda
+  // mudo. El feed publica cada traspaso con sus dos partes y su importe.
+  let rivalTransactions: Transaction[] = []
+  try {
+    const feedHtml = await api.getFeedHtml()
+    const transfers = parseFeedTransfers(feedHtml)
+    const all = feedTransfersToTransactions(transfers, snapshotAt)
+    // Los propios se descartan: para uno mismo manda el libro de balance, que
+    // es autoritativo y trae fecha y saldo resultante.
+    rivalTransactions = all.filter((t) => t.managerId !== selfId)
+    log(`${transfers.length} traspasos en el feed, ${rivalTransactions.length} apuntes de rivales`)
+
+    const propios = all.filter((t) => t.managerId === selfId)
+    if (propios.length > 0) {
+      // La direccion del traspaso se infiere del orden dentro de .flow, no de
+      // una etiqueta. Contrastarla contra el libro propio, que si es
+      // autoritativo, es la unica forma de saber si la inferencia es correcta.
+      const check = crossCheckDirection(propios, transactions)
+      log(
+        `contraste de direccion con el libro propio: ${check.coinciden} coinciden, ` +
+          `${check.discrepan} discrepan`,
+      )
+      if (check.discrepan > check.coinciden) {
+        warn(
+          'la direccion inferida de los traspasos del feed contradice el libro propio en la ' +
+            'mayoria de los casos: probablemente esta invertida, y los saldos rivales saldrian al reves',
+        )
+      }
+    }
+    if (transfers.length === 0) {
+      warn('el feed no devolvio ningun traspaso: sin ellos no hay saldos rivales')
+    }
+  } catch (err) {
+    warn(`no se pudo leer el feed de actividad: ${String(err)}`)
+  }
+
   const snapshot: LeagueSnapshot = {
-    takenAt: new Date().toISOString(),
+    takenAt: snapshotAt,
     seasonId: config.seasonId,
     leagueId: http.leagueId ?? config.leagueId ?? 'desconocida',
     currentJornada,
@@ -226,7 +270,14 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     players,
   }
 
-  return { snapshot, transactions, balance, warnings, enrichedCount }
+  return {
+    snapshot,
+    transactions,
+    rivalTransactions,
+    balance,
+    warnings,
+    enrichedCount,
+  }
 }
 
 /**
@@ -312,4 +363,35 @@ function normalizePlayer(raw: Record<string, unknown>): Player | null {
     status: 'ok',
     ownerId: Number.isFinite(ownerRaw) && ownerRaw > 0 ? ownerRaw : undefined,
   }
+}
+
+/**
+ * Contrasta la direccion inferida en el feed contra el libro propio.
+ *
+ * En el feed, quien entrega y quien recibe se deducen del ORDEN en que
+ * aparecen, no de una etiqueta. Si esa inferencia estuviera invertida, los
+ * saldos de todos los rivales saldrian del reves y el error seria silencioso.
+ *
+ * Los traspasos propios aparecen en ambos sitios, asi que sirven de piedra de
+ * toque: para cada uno se comprueba que el signo deducido del feed coincide con
+ * el que dice el libro de balance.
+ */
+function crossCheckDirection(
+  fromFeed: Transaction[],
+  ownLedger: Transaction[],
+): { coinciden: number; discrepan: number } {
+  let coinciden = 0
+  let discrepan = 0
+
+  for (const feedTx of fromFeed) {
+    if (!feedTx.playerName) continue
+    const enLibro = ownLedger.find(
+      (t) => t.playerName === feedTx.playerName && Math.abs(t.amount) === Math.abs(feedTx.amount),
+    )
+    if (!enLibro) continue
+    if (Math.sign(enLibro.amount) === Math.sign(feedTx.amount)) coinciden++
+    else discrepan++
+  }
+
+  return { coinciden, discrepan }
 }

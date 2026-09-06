@@ -145,9 +145,23 @@ export function buildDemoSnapshot(): DemoData {
   const saldo = M(11.4)
   const plantillaInicial = M(50) - (saldo - movimientos)
 
+  // Traspasos entre rivales, para que la demo ejercite tambien la
+  // reconstruccion de saldos ajenos y no solo la propia.
+  const rivalTransactions: Transaction[] = [
+    { date: '2026-09-01T05:00:00', type: 'sale', amount: M(9.2), managerId: 4411,
+      counterpartyId: 4412, playerName: 'Traspaso Rival' },
+    { date: '2026-09-01T05:00:00', type: 'purchase', amount: M(-9.2), managerId: 4412,
+      counterpartyId: 4411, playerName: 'Traspaso Rival' },
+    { date: '2026-09-04T05:00:00', type: 'buyout_signing', amount: M(-15.5), managerId: 4413,
+      counterpartyId: 4414, playerName: 'Robado Rival' },
+    { date: '2026-09-04T05:00:00', type: 'buyout_sale', amount: M(15.5), managerId: 4414,
+      counterpartyId: 4413, playerName: 'Robado Rival' },
+  ]
+
   return {
     snapshot,
     transactions,
+    rivalTransactions,
     balance: { balance: saldo, future: saldo, maxDebt: saldo + M(30), history: [] },
     warnings: ['datos sinteticos de demostracion: no reflejan la liga real'],
     enrichedCount: players.length,

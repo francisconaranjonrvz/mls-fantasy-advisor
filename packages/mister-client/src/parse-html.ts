@@ -469,3 +469,133 @@ export function describeStructure(
 
   return out
 }
+
+// ---------------------------------------------------------------------------
+// Feed de actividad: traspasos entre managers
+// ---------------------------------------------------------------------------
+
+export interface FeedTransfer {
+  playerId: number
+  playerName: string
+  /** Manager que entrega. undefined = lo vendia Mister (mercado). */
+  fromManagerId?: number | undefined
+  /** Manager que recibe. undefined = lo compra Mister. */
+  toManagerId?: number | undefined
+  price: number
+  /** Texto de cabecera de la tarjeta, util para distinguir clausulazo de compra. */
+  title: string
+  /** Identificador de la tarjeta en el feed, para deduplicar. */
+  cardId?: string | undefined
+}
+
+/**
+ * Traspasos publicados en el feed de actividad.
+ *
+ * Es la unica via a los movimientos de los RIVALES: /ajax/sw/balance devuelve
+ * solo el libro propio, asi que sin esto los saldos ajenos no se pueden
+ * reconstruir y el analisis de clausulas se queda mudo.
+ *
+ * Estructura de cada tarjeta, comprobada contra la liga real:
+ *   .card-transfer > .item > .player-row
+ *     .player-avatar[data-id_player]   que jugador
+ *     .flow                            quien lo entrega y quien lo recibe
+ *       a.user[href="users/{id}/{slug}"]   un manager
+ *       .avatar (sin enlace)               Mister, que no tiene pagina
+ *       .price                             importe
+ *
+ * La direccion se toma del orden de aparicion dentro de .flow: primero quien
+ * entrega, despues quien recibe. Es una inferencia, no un dato etiquetado, asi
+ * que conviene contrastarla: los traspasos propios aparecen tanto aqui como en
+ * el libro de balance, que si es autoritativo.
+ */
+export function parseFeedTransfers(html: string): FeedTransfer[] {
+  const $ = cheerio.load(html)
+  const out: FeedTransfer[] = []
+
+  $('.card-transfer').each((_i, card) => {
+    const cardId = $(card).attr('id') ?? undefined
+
+    $(card).find('.item').each((_j, item) => {
+      const node = $(item)
+
+      const idRaw = node.find('.player-avatar').first().attr('data-id_player')
+      const playerId = idRaw ? Number.parseInt(idRaw, 10) : NaN
+      if (!Number.isFinite(playerId) || playerId <= 0) return
+
+      const flow = node.find('.flow').first()
+      if (flow.length === 0) return
+
+      // Los participantes, en orden de aparicion. Un manager es un enlace a su
+      // pagina; Mister no tiene pagina, asi que aparece como un div suelto.
+      const parties: (number | undefined)[] = []
+      flow.children().each((_k, child) => {
+        const $child = $(child)
+        const isUser = $child.hasClass('user') || $child.hasClass('avatar')
+        if (!isUser) return
+        const href = $child.attr('href') ?? $child.find('a').first().attr('href') ?? ''
+        const m = /users\/(\d+)/.exec(href)
+        parties.push(m?.[1] ? Number.parseInt(m[1], 10) : undefined)
+      })
+
+      out.push({
+        playerId,
+        playerName: node.find('.name').first().text().trim(),
+        fromManagerId: parties[0],
+        toManagerId: parties[1],
+        price: parseEuros(flow.find('.price').first().text()),
+        title: node.find('.title').first().text().replace(/\s+/g, ' ').trim(),
+        cardId,
+      })
+    })
+  })
+
+  return out
+}
+
+/**
+ * Convierte los traspasos del feed en movimientos por manager.
+ *
+ * Cada traspaso genera hasta dos apuntes simetricos: quien entrega ingresa el
+ * importe y quien recibe lo paga. Los que tienen a Mister en un extremo generan
+ * uno solo, porque el mercado no es un manager cuyo saldo interese.
+ *
+ * El tipo se infiere del titulo de la tarjeta: Mister distingue una compra de
+ * mercado de un clausulazo, y esa diferencia importa porque un clausulazo
+ * cambia el precio de compra del jugador y con el su futura clausula.
+ */
+export function feedTransfersToTransactions(
+  transfers: FeedTransfer[],
+  at: string,
+): Transaction[] {
+  const out: Transaction[] = []
+
+  for (const t of transfers) {
+    const esClausulazo = /cl[aá]usula/i.test(t.title)
+
+    if (t.fromManagerId !== undefined) {
+      out.push({
+        date: at,
+        type: esClausulazo ? 'buyout_sale' : 'sale',
+        amount: t.price,
+        managerId: t.fromManagerId,
+        counterpartyId: t.toManagerId,
+        playerId: t.playerId,
+        playerName: t.playerName,
+      })
+    }
+
+    if (t.toManagerId !== undefined) {
+      out.push({
+        date: at,
+        type: esClausulazo ? 'buyout_signing' : 'purchase',
+        amount: -t.price,
+        managerId: t.toManagerId,
+        counterpartyId: t.fromManagerId,
+        playerId: t.playerId,
+        playerName: t.playerName,
+      })
+    }
+  }
+
+  return out
+}

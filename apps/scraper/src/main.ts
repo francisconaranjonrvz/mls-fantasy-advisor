@@ -51,7 +51,7 @@ async function main(): Promise<void> {
   const demoData = useDemo ? buildDemoSnapshot() : null
   const result = demoData ?? (await ingest(config))
 
-  const { snapshot, transactions, warnings } = result
+  const { snapshot, transactions, rivalTransactions, warnings } = result
 
   // --- Validacion antes de tocar el disco ---
   const parsed = leagueSnapshotSchema.safeParse(snapshot)
@@ -86,7 +86,13 @@ async function main(): Promise<void> {
 
   const baseline =
     demoData?.baseline ?? readJson<SeasonBaseline>(join(paths.root, 'baseline.json'))
-  const diagnosis = analyze(snapshot, transactions, warnings, new Date(), baseline)
+  const diagnosis = analyze(
+    snapshot,
+    [...transactions, ...rivalTransactions],
+    warnings,
+    new Date(),
+    baseline,
+  )
   console.log('\n' + renderConsoleSummary(diagnosis) + '\n')
 
   if (config.dryRun) {

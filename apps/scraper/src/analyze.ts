@@ -147,7 +147,11 @@ export function analyze(
         managerId: m.id,
         initialSquadValue: initialSquadValue(m.id),
         transactions: txs,
-        historyComplete: txs.length > 0,
+        // El feed publica los traspasos pero no las bonificaciones ni las
+        // modificaciones de clausula, asi que el historial rival nunca es
+        // completo. Se marca como tal para que el intervalo lo refleje en vez
+        // de fingir precision.
+        historyComplete: false,
         teamValue: m.teamValue,
         averageLineupValue: Math.round(m.teamValue * 0.6),
         // Si ha puntuado es que no arranco la jornada en negativo, porque
