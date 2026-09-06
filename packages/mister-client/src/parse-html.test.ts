@@ -199,3 +199,28 @@ describe('deteccion del id de liga', () => {
     expect(extractLeagueId('<html><body>nada</body></html>')).toBeNull()
   })
 })
+
+describe('numero de jornada', () => {
+  /**
+   * Regresion: data-gwid es el identificador GLOBAL de jornada de Mister, no el
+   * numero de jornada de liga. Contra la cuenta real valia 4045 y se colaba en
+   * el diagnostico, descuadrando todo lo que depende de cuantas jornadas se han
+   * jugado.
+   */
+  it('descarta un gwid que no puede ser un numero de jornada', () => {
+    expect(parseCurrentJornada('<div data-gwid="4045"></div>')).toBeNull()
+  })
+
+  it('prefiere el numero visible al identificador interno', () => {
+    const html = '<div class="gameweek" data-gwid="4045"><span>JORNADA 6</span></div>'
+    expect(parseCurrentJornada(html)).toBe(6)
+  })
+
+  it('acepta un gwid plausible cuando no hay numero visible', () => {
+    expect(parseCurrentJornada('<div data-gwid="6"></div>')).toBe(6)
+  })
+
+  it('no acepta una jornada 39, que no existe', () => {
+    expect(parseCurrentJornada('<span>JORNADA 39</span>')).toBeNull()
+  })
+})

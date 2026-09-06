@@ -8,8 +8,11 @@ import type { MisterHttp } from './http.ts'
  *  - /api2/*  REST moderno (BeManager). Auth y perfil.
  *  - /ajax/*  El despachador clasico de la web. Casi todos los datos.
  *
- * /ajax/sw es un despachador generico: el campo `post` del formulario decide
- * que recurso devuelve. Todas las respuestas tienen forma {status, data}.
+ * /ajax/sw NO es un despachador generico, aunque parte del codigo de la
+ * comunidad lo usa asi. Contra produccion, POST /ajax/sw devuelve 404: el
+ * recurso va en la RUTA, /ajax/sw/players, /ajax/sw/users, etc., y ademas se
+ * repite en el campo `post` del formulario. Enviarlo solo en el cuerpo no
+ * vale. Todas las respuestas tienen forma {status, data}.
  *
  * Los tipos son deliberadamente permisivos: la API no esta documentada ni
  * versionada, y preferimos degradar campo a campo antes que romper la ingesta
@@ -103,9 +106,23 @@ export class MisterEndpoints {
     this.http = http
   }
 
-  /** Tu saldo. Mister no expone el de los rivales: hay que reconstruirlo. */
+  /**
+   * Tu saldo. Mister no expone el de los rivales: hay que reconstruirlo.
+   *
+   * Se prueban las dos rutas que circulan por los clientes de la comunidad.
+   * /ajax/balance responde, pero devolvia todo a cero contra la cuenta real,
+   * asi que se intenta primero la variante con recurso en la ruta, que es la
+   * que usa el cliente que si funciona en produccion.
+   */
   async getBalance(): Promise<BalanceInfo> {
-    const res = await this.http.postForm<AjaxEnvelope<BalanceData>>('/ajax/balance', {})
+    let res: AjaxEnvelope<BalanceData>
+    try {
+      res = await this.http.postForm<AjaxEnvelope<BalanceData>>('/ajax/sw/balance', {
+        post: 'balance',
+      })
+    } catch {
+      res = await this.http.postForm<AjaxEnvelope<BalanceData>>('/ajax/balance', {})
+    }
     const d = res.data ?? {}
     return {
       balance: toInt(d.balance),
@@ -121,7 +138,7 @@ export class MisterEndpoints {
   async getAllPlayers(pageSize = 50, maxPages = 40): Promise<RawPlayerRecord[]> {
     const all: RawPlayerRecord[] = []
     for (let page = 0; page < maxPages; page++) {
-      const res = await this.http.postForm<AjaxEnvelope<PlayersPage>>('/ajax/sw', {
+      const res = await this.http.postForm<AjaxEnvelope<PlayersPage>>('/ajax/sw/players', {
         post: 'players',
         'filters[position]': 0,
         'filters[value]': 0,
@@ -146,7 +163,7 @@ export class MisterEndpoints {
 
   /** Historico de puntos y de valor de un jugador. */
   async getPlayerDetail(playerId: number): Promise<PlayerDetail> {
-    const res = await this.http.postForm<AjaxEnvelope<PlayerDetail>>('/ajax/sw', {
+    const res = await this.http.postForm<AjaxEnvelope<PlayerDetail>>('/ajax/sw/players', {
       post: 'players',
       id: playerId,
     })
@@ -155,7 +172,7 @@ export class MisterEndpoints {
 
   /** Ficha de un manager rival: puntos, media, valor de equipo y plantilla. */
   async getManager(userId: number): Promise<ManagerDetail> {
-    const res = await this.http.postForm<AjaxEnvelope<ManagerDetail>>('/ajax/sw', {
+    const res = await this.http.postForm<AjaxEnvelope<ManagerDetail>>('/ajax/sw/users', {
       post: 'users',
       id: userId,
     })
@@ -164,7 +181,7 @@ export class MisterEndpoints {
 
   /** Progresion de la clasificacion jornada a jornada. */
   async getProgression(): Promise<unknown> {
-    const res = await this.http.postForm<AjaxEnvelope<unknown>>('/ajax/sw', {
+    const res = await this.http.postForm<AjaxEnvelope<unknown>>('/ajax/sw/progression', {
       post: 'progression',
     })
     return res.data

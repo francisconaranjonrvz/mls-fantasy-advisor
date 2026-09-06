@@ -129,11 +129,35 @@ export function parseStandingsMembers(html: string): { id: number; slug: string 
   return [...found].map(([id, slug]) => ({ id, slug }))
 }
 
-/** Jornada en curso, expuesta como data-gwid en /team. */
+/** Una temporada de LaLiga tiene 38 jornadas; nada por encima es un numero de jornada. */
+const MAX_JORNADA = 38
+
+/**
+ * Jornada de liga en curso.
+ *
+ * Ojo con data-gwid: no es el numero de jornada sino el identificador GLOBAL de
+ * jornada de Mister, compartido por todas las ligas. Contra la cuenta real
+ * devolvia 4045, que se colaba tal cual en el diagnostico y descuadraba todo lo
+ * que depende de cuantas jornadas se han jugado, desde la media de puntos hasta
+ * la proyeccion del bote.
+ *
+ * Asi que se busca primero el numero visible ("JORNADA 6") y solo se acepta un
+ * gwid si cae dentro del rango posible de una temporada.
+ */
 export function parseCurrentJornada(html: string): number | null {
-  const m = /data-gwid=["'](\d+)["']/.exec(html) ?? /gwid["']?\s*[:=]\s*["']?(\d+)/.exec(html)
-  const n = m?.[1] ? Number.parseInt(m[1], 10) : NaN
-  return Number.isFinite(n) ? n : null
+  const visible = /JORNADA\s+(\d{1,2})(?!\d)/i.exec(html)
+  if (visible?.[1]) {
+    const n = Number.parseInt(visible[1], 10)
+    if (n >= 1 && n <= MAX_JORNADA) return n
+  }
+
+  for (const re of [/data-gwid=["'](\d+)["']/, /gwid["']?\s*[:=]\s*["']?(\d+)/]) {
+    const m = re.exec(html)
+    const n = m?.[1] ? Number.parseInt(m[1], 10) : NaN
+    if (Number.isFinite(n) && n >= 1 && n <= MAX_JORNADA) return n
+  }
+
+  return null
 }
 
 /**
