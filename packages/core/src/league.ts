@@ -47,15 +47,19 @@ export interface LeagueConfig {
   /**
    * Fraccion del presupuesto que Mister entrega como PLANTILLA al empezar.
    *
-   * El resto se acredita como saldo. No es una suposicion: en la cuenta real
-   * el apunte inicial fue de 12.472.000 sobre 50M, o sea el 24,944%. Que se
-   * quede a 28.000 euros del 25% exacto (un 0,056% del presupuesto) no es
-   * casualidad, es el redondeo de cuadrar la plantilla con valores enteros de
-   * jugador.
+   * OJO: esto NO es una regla del juego, aunque lo pareciera. Mi propio apunte
+   * de reparto fueron 12.472.000 sobre 50M, el 24,944%, a un 0,056% del 25%
+   * exacto, y me parecio demasiado redondo para ser casualidad. Lo era.
    *
-   * Importa mucho porque el valor de la plantilla inicial de los rivales es el
-   * termino que mas ensancha la estimacion de su saldo: tres cuartas partes
-   * del ancho del intervalo salian de no saber esto.
+   * Aplicandolo a los nueve rivales, seis salian comprando el primer dia mas
+   * dinero del que esa fraccion les daba. Reconstruyendo lo que necesitaban
+   * para que sus movimientos fueran posibles, las plantillas repartidas iban de
+   * 18,6M a 52M: el reparto es aleatorio de verdad y yo generalice a partir de
+   * una sola observacion, la mia.
+   *
+   * Se conserva solo como ultimo recurso, para cuando no hay libro del que
+   * calcularlo. Lo que manda es estimateDraft() en packages/engine/src/draft.ts,
+   * que lo saca jugador a jugador del feed.
    */
   initialSquadPctOfBudget: number
   /**

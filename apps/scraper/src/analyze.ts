@@ -7,7 +7,7 @@ import {
   buildValuationContext, reconstructBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
   optimizeLineup, bestSubstitution, auditHistory, rankMarketBuys, observedInitialCash,
-  maxClauseSpendForSquad, minClauseSpendForSquad,
+  maxClauseSpendForSquad, minClauseSpendForSquad, estimateDraft, minimumInitialCash,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
   type Calibration, type HistoryAudit,
 } from '@mls/engine'
@@ -248,6 +248,15 @@ export function analyze(
 
   const rivals: RivalView[] = rivalsRaw.map((m) => {
     const txs = txByManager.get(m.id) ?? []
+
+    // La plantilla repartida se CALCULA jugador a jugador, no se supone. Ver
+    // packages/engine/src/draft.ts: la regla del 75% que deduje de mi propio
+    // reparto no vale para los demas, el reparto es aleatorio de verdad.
+    const reparto = estimateDraft(m.id, m.squad, txs, config)
+    const cajaMinima = minimumInitialCash(m.id, m.teamValue, txs, config)
+    // Si lo calculado no llega al suelo que impone su propia solvencia, manda
+    // el suelo: hay jugadores repartidos cuyo rastro se ha perdido.
+    const cajaInicial = Math.max(reparto.initialCash, cajaMinima)
     const balance = reconstructBalance(
       {
         managerId: m.id,
@@ -258,9 +267,7 @@ export function analyze(
         maxClauseSpend: maxClauseSpendForSquad(m.squad),
         minClauseSpend: minClauseSpendForSquad(m.squad),
         initialSquadValue: initialSquadValue(m.id),
-        // Sin baseline declarado, se le supone el reparto que se observo en la
-        // cuenta propia. Es una suposicion y el intervalo lo dice.
-        initialSquadValueHint: plantillaInicialPropia,
+        initialSquadValueHint: config.initialBudget - cajaInicial,
         transactions: txs,
         // Con /ajax/feed paginado hasta el principio de temporada, el libro
         // rival deja de estar cortado: trae traspasos, quiniela, cambios de
