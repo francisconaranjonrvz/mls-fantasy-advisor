@@ -352,7 +352,15 @@ function ThreatCard({ t }: { t: Threat }) {
       </h3>
       <div className="facts">
         <span>Cláusula <b>{fmt(t.clause)}</b></span>
-        <span>Vale <b>{fmt(t.sportingValue)}</b></span>
+        {/*
+          Antes aqui ponia «Vale» y se pintaba el valor deportivo, que es cosa
+          del modelo, no de Mister. Al lado de una clausula en euros se leia
+          como el valor de mercado, y no cuadraba con la ficha del jugador:
+          Mister decia 570.000 y aqui salia 2,7M. Son dos cifras distintas y
+          ahora se dicen las dos, cada una con su nombre.
+        */}
+        <span>Valor <b>{fmt(t.player.value)}</b></span>
+        <span>Rinde como <b>{fmt(t.sportingValue)}</b></span>
         <span>Beneficio para quien lo robe <b>{fmt(t.raidProfit)}</b></span>
         {t.threats.length > 0 && (
           <span>Pueden pagarla: {t.threats.map((x) => x.name).join(', ')}</span>

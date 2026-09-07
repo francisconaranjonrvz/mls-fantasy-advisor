@@ -69,6 +69,17 @@ export interface LineupPlan {
   slots: LineupSlot[]
   /** Puntos esperados del once, ya descontadas las penalizaciones por hueco. */
   expectedPoints: number
+  /**
+   * Lo que suman los jugadores del once, SIN la penalizacion por hueco.
+   *
+   * Se expone aparte porque las dos cifras responden a preguntas distintas.
+   * Para elegir formacion manda `expectedPoints`, que incluye el castigo. Para
+   * medir lo que aporta un jugador concreto manda esta, porque la
+   * penalizacion no es merito suyo: la evita cualquiera que ocupe el hueco,
+   * incluido un suplente de 100.000 euros. Mezclarlas hacia que a todo
+   * candidato se le atribuyera un merito que no era suyo.
+   */
+  rawPoints: number
   /** Huecos que no se han podido cubrir. Cada uno resta. */
   emptySlots: number
   penalty: number
@@ -118,6 +129,7 @@ export function bestLineupFor(
     formation,
     slots,
     expectedPoints: raw + penalty,
+    rawPoints: raw,
     emptySlots,
     penalty,
     bench: squad

@@ -36,6 +36,24 @@ export interface MarginalGain {
   displaces?: OwnedPlayer | undefined
   /** Si no entra en el once, el fichaje no aporta nada hoy. */
   entersLineup: boolean
+  /**
+   * Penalizacion por hueco que el fichaje evita, por jornada.
+   *
+   * Se devuelve APARTE de `perJornada` a proposito, y la distincion importa.
+   * Son dos preguntas que se responden distinto:
+   *
+   *  - Cuanto vale este jugador. Eso es `perJornada`, y no incluye esto,
+   *    porque el hueco lo tapa igual de bien el suplente mas barato del
+   *    mercado libre. Pagarle una clausula de cuatro millones a un titular
+   *    ajeno para evitar una penalizacion de cuatro puntos es un mal negocio.
+   *
+   *  - Que urge hacer esta jornada. Eso si es esto: mientras el hueco siga
+   *    abierto se pierden puntos de verdad, cada jornada.
+   *
+   * Mezclarlas es lo que inflaba el analisis: la urgencia se sumaba al precio
+   * del jugador y ademas se multiplicaba por las jornadas que quedan.
+   */
+  gapRelief: number
 }
 
 /** Un jugador cualquiera visto como si ya fuera de la plantilla. */
@@ -67,8 +85,28 @@ export function marginalGain(
     config,
   ).best
 
-  const perJornada = Math.max(0, conEl.expectedPoints - sinEl.expectedPoints)
+  // Se restan los puntos BRUTOS, no los penalizados, y esto era un fallo.
+  //
+  // `expectedPoints` lleva descontada la penalizacion por hueco sin cubrir: 4
+  // puntos por jornada y hueco. Al restar dos onces penalizados, quien tapaba
+  // un hueco se llevaba sus propios puntos MAS los 4 de la penalizacion
+  // evitada, y esos 4 no son suyos: los evita cualquiera que ocupe el hueco,
+  // incluido un suplente de 100.000 euros del mercado libre.
+  //
+  // Peor aun, la penalizacion se capitalizaba multiplicandola por las jornadas
+  // que quedan, como si el hueco fuera a seguir abierto hasta junio. Contra
+  // los datos reales de la liga eso metia 4 x 32 = 128 puntos, unos 3,97
+  // millones, en el beneficio del robo de CADA jugador. Constante, identica
+  // para todos, y por tanto invisible al comparar unos con otros: solo se veia
+  // al contrastar la ganancia con los puntos que el jugador puede dar.
+  //
+  // Como el beneficio del robo se queda con el rival al que mas le compensa,
+  // mandaba siempre el rival con la plantilla mas corta, y toda la plantilla
+  // propia salia en riesgo alto.
+  const perJornada = Math.max(0, conEl.rawPoints - sinEl.rawPoints)
   const entersLineup = conEl.slots.some((s) => s.player?.id === candidate.id)
+  // La penalizacion es negativa, asi que evitarla es la diferencia al reves.
+  const gapRelief = Math.max(0, conEl.penalty - sinEl.penalty)
 
   // A quien desplaza: el que estaba en el once antes y ya no esta.
   const antes = new Set(sinEl.slots.map((s) => s.player?.id).filter((id): id is number => !!id))
@@ -81,6 +119,7 @@ export function marginalGain(
     remaining: perJornada * ctx.jornadasRemaining,
     displaces,
     entersLineup,
+    gapRelief,
   }
 }
 

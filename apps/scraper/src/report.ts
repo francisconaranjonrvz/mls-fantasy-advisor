@@ -139,6 +139,9 @@ export function renderDiagnosis(d: Diagnosis): string {
       L.push(`### ${t.player.name} - riesgo ${t.risk}`)
       L.push('')
       L.push(`- Clausula actual: ${formatShort(t.clause)}`)
+      // Las dos juntas y con nombres distintos: la de Mister y la del modelo.
+      // Enfrentadas se leen bien; una sola se confunde con la otra.
+      L.push(`- Valor de mercado en Mister: ${formatShort(t.player.value)}`)
       L.push(`- Precio justo por lo que rinde: ${formatShort(t.sportingValue)}`)
       L.push(
         `- Beneficio para el rival al que mas le compensa: **${formatShort(t.raidProfit)}** ` +
