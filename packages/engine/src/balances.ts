@@ -105,6 +105,15 @@ export interface ManagerLedger {
    * eso estrecha el intervalo tambien por arriba, no solo por abajo.
    */
   minClauseSpend?: Euros | undefined
+  /**
+   * Si las SUBIDAS de clausula de este manager estan en `transactions`.
+   *
+   * Solo lo estan en el libro propio. El feed publica las bajadas, que son un
+   * abono, pero no las subidas, que son el gasto. Tratar el historial como
+   * completo por tener el feed entero dejaba ese gasto sin contar: en la
+   * prueba a ciegas eran 2,38M que faltaban.
+   */
+  clauseRaisesObserved?: boolean | undefined
   /** Puesto en cada jornada cerrada. Da la bonificacion exacta. */
   jornadaRanks?: { jornada: number; rank: number }[] | undefined
   /**
@@ -320,6 +329,21 @@ export function reconstructBalance(
     ? known + qHigh + sHigh
     : known + qHigh + sHigh + (config.initialBudget - initialSquadLow) - components.initialCash
 
+  // El gasto en subir clausulas no se publica en ningun sitio, ni siquiera con
+  // el feed entero: solo aparecen las bajadas. Asi que se acota a partir de las
+  // clausulas que si se ven, salvo que venga ya en el libro, que es el caso del
+  // propio.
+  if (!ledger.clauseRaisesObserved) {
+    const maxGasto = ledger.maxClauseSpend ?? (
+      ledger.historyComplete ? 0 : Math.round(ledger.teamValue * 0.4)
+    )
+    low -= maxGasto
+    high -= ledger.minClauseSpend ?? 0
+    if (maxGasto > 0) {
+      unknowns.push('las subidas de clausula no se publican; se acotan con las clausulas visibles')
+    }
+  }
+
   if (!ledger.historyComplete) {
     // Lo que falta no es "todo": son las bonificaciones de jornada y las
     // modificaciones de clausula. Ambas estan ACOTADAS por las reglas de la
@@ -340,12 +364,6 @@ export function reconstructBalance(
       low += Math.min(...config.jornadaRankBonus) * jornadas
       high += Math.max(...config.jornadaRankBonus) * jornadas
     }
-    // Lo que pudo gastar en clausulas sin que se vea. Si se conocen sus
-    // clausulas, la cota sale de ellas y es mucho mas estrecha que suponer una
-    // fraccion del valor del equipo. Y con el precio de compra tambien hay
-    // suelo, asi que el intervalo se cierra por los dos lados.
-    low -= ledger.maxClauseSpend ?? Math.round(ledger.teamValue * 0.4)
-    high -= ledger.minClauseSpend ?? 0
   }
 
   const constraintsApplied: string[] = []

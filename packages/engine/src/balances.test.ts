@@ -422,3 +422,45 @@ describe('la caja inicial se lee, no se supone', () => {
     expect(est.low).toBe(est.high)
   })
 })
+
+describe('las subidas de clausula no se publican en ninguna parte', () => {
+  /**
+   * El feed publica las BAJADAS, que son un abono, pero no las subidas, que
+   * son el gasto. Asi que tener el feed entero no basta: hay que seguir
+   * acotando ese gasto con las clausulas que si se ven.
+   *
+   * Se descubrio reconstruyendo mi propio saldo a ciegas: sobraban 2,38M, que
+   * era exactamente lo que decia mi libro de subidas de clausula.
+   */
+  const base = {
+    managerId: 7,
+    transactions: [] as Transaction[],
+    historyComplete: true,
+    teamValue: M(50),
+    jornadaRanks: [],
+    maxClauseSpend: M(3),
+    minClauseSpend: M(1),
+  }
+
+  it('las acota aunque el historial este completo', () => {
+    const e = reconstructBalance(base, MLS_LEAGUE)
+    expect(e.high - e.low).toBeGreaterThanOrEqual(M(2))
+    expect(e.unknowns.join(' ')).toMatch(/subidas de clausula/)
+  })
+
+  it('no las acota cuando ya vienen en el libro, como en el propio', () => {
+    const e = reconstructBalance({ ...base, clauseRaisesObserved: true }, MLS_LEAGUE)
+    expect(e.unknowns.join(' ')).not.toMatch(/subidas de clausula/)
+    // Quitado ese termino y con el historial completo, lo unico que queda es
+    // la banda de la plantilla inicial: el 2% del presupuesto a cada lado.
+    const banda = MLS_LEAGUE.initialBudget * MLS_LEAGUE.initialSquadTolerance * 2
+    expect(e.high - e.low).toBe(banda)
+  })
+
+  it('el suelo del gasto estrecha el intervalo por arriba', () => {
+    const sinSuelo = reconstructBalance({ ...base, minClauseSpend: 0 }, MLS_LEAGUE)
+    const conSuelo = reconstructBalance(base, MLS_LEAGUE)
+    expect(conSuelo.high).toBeLessThan(sinSuelo.high)
+    expect(conSuelo.low).toBe(sinSuelo.low)
+  })
+})

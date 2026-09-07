@@ -311,6 +311,9 @@ export function analyze(
               : initialSquadValue(self.id),
           transactions: ownTxs,
           historyComplete: true,
+          // El libro propio si trae las subidas de clausula, asi que no hay
+          // nada que acotar: estan en los apuntes.
+          clauseRaisesObserved: true,
           teamValue: self.teamValue,
           averageLineupValue: Math.round(self.teamValue * 0.6),
         },
