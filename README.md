@@ -26,22 +26,49 @@ de actividad, y todos los participantes empezaron con el mismo presupuesto.
 El invariante: los 10 participantes empezaron con **50M** repartidos entre plantilla y caja.
 
 ```
-saldo(t) = 50M
-         - valor de la plantilla inicial
-         + ventas - compras
-         +/- clausulazos cobrados y pagados
-         + bonificaciones de jornada     <- deterministas segun la clasificacion
-         + quiniela                      <- NO observable
-         - salarios                      <- ver docs/INCOGNITAS.md
+saldo(t) = caja inicial                  <- 50M menos la plantilla repartida
+         + ventas - compras              <- del feed, con importe exacto
+         +/- clausulazos                 <- del feed, con importe exacto
+         + bonificaciones de jornada     <- exactas: dependen solo del puesto
+         + quiniela                      <- acotada: 25.000 por acierto, 10 partidos
+         - modificaciones de clausula    <- acotadas por las clausulas visibles
+         - salarios                      <- comprobado que estan apagados
 ```
 
-Los tres primeros terminos salen del feed publico con importe exacto y contraparte. Las
-bonificaciones son deterministas. Los dos ultimos no son observables, asi que se propagan
-como incertidumbre: la aplicacion da una estimacion puntual **y un intervalo**, nunca un
-numero falsamente exacto.
+La aplicacion da una estimacion puntual **y un intervalo**, nunca un numero falsamente
+exacto. Y el trabajo de verdad esta en estrechar ese intervalo sin mentir: cada termino
+que parecia desconocido resulto estar acotado por algo observable.
+
+- **La caja inicial** aparece como un apunte en el libro propio, antes de la primera
+  jornada. Mister no reparte 50M de saldo: reparte plantilla y acredita el resto.
+- **Las bonificaciones** dependen solo del puesto de cada jornada, y `/ajax/sw/progression`
+  publica ese puesto para los diez participantes. Dejan de ser un rango de 1,0M a 1,5M por
+  jornada y pasan a ser una cifra.
+- **Las modificaciones de clausula** no se publican, pero se acotan: subir n tramos cuesta
+  `0,40 x (clausula - 1,5 x valor)`, y la clausula y el valor si se ven. Quien tiene la
+  clausula por defecto no gasto un euro.
+- **Los salarios** estan apagados, y no porque lo diga una captura: en 54 movimientos que
+  cubren cuatro jornadas no hay ni un cargo, y la auditoria del libro cuadra al centimo.
 
 Esto no es una limitacion, es lo que lo hace util: si el intervalo de un rival queda por
 debajo de la clausula de tu jugador, estas a salvo con certeza. Si lo cruza, no lo estas.
+
+## Como se decide
+
+Lo que decide no es lo bueno que sea un jugador, sino **cuanto mejora tu once**. Un
+centrocampista excelente no vale nada si ya tienes cinco mejores; uno mediano en la
+posicion en la que vas cojo puede valer mucho. El motor lo calcula por diferencia: optimiza
+el once con el jugador y sin el.
+
+Eso se convierte en **euros por punto ganado**, que es la unica cifra con la que se pueden
+comparar cosas que no se parecen: un clausulazo de 20M, una puja de 3M y quedarse el
+dinero. Y se juzga contra el punto mas barato que ofrece hoy el mercado abierto, porque esa
+es la alternativa real para ese mismo dinero.
+
+Para defender vale lo mismo, mirando la plantilla del rival: solo es amenaza quien ademas
+saldria ganando. Y cuando no hay tramo que quite el incentivo, la recomendacion no es
+resignarse sino subir la clausula para **cobrar mas** por el robo, que a 0,40 por euro sale
+a cuenta siempre que el robo sea mas probable que eso.
 
 ## La aritmetica de las clausulas
 
@@ -81,7 +108,7 @@ sabe hacer: interpretar noticias de lesiones, valorar rotaciones y explicar el p
 | Pieza | Servicio | Motivo |
 |---|---|---|
 | Scheduler | GitHub Actions en repo publico | Minutos ilimitados y gratuitos en repos publicos. |
-| Precision horaria | Cloudflare Cron Trigger que dispara `workflow_dispatch` | El cron de GitHub sufre retrasos de horas. |
+| Despliegue | GitHub Actions con un token de Cloudflare | Sin instalar wrangler ni iniciar sesion a mano. |
 | Base de datos | Un repo git privado aparte | Unos pocos MB por temporada. Nada que se pause ni pida tarjeta. |
 | Web y API | Un Cloudflare Worker con `assets` | Los assets estaticos no consumen cuota. |
 
@@ -119,11 +146,22 @@ cookies y sesiones.
 
 ## Estado
 
-- Motor de dominio, cliente de Mister, ingesta, Worker y dashboard: **hechos**, con 128 tests.
-- Ingesta programada cuatro veces al dia en GitHub Actions: **hecha**.
-- Falta capturar la sesion de Mister y lanzar la primera ingesta, y confirmar en la app
-  las cinco incognitas de [docs/INCOGNITAS.md](docs/INCOGNITAS.md), que estrechan
-  bastante las estimaciones de saldo.
+Funcionando contra la liga real, cuatro veces al dia, desde GitHub Actions.
+
+Lo que esta **comprobado contra datos**, no supuesto:
+
+- **El libro de movimientos.** 54 apuntes auditados contra el saldo que declara Mister
+  despues de cada uno: 0 descuadres. La reconstruccion reproduce el saldo propio exacto.
+  Ese es el test de que el metodo aplicado a los rivales vale.
+- **La direccion de los traspasos.** En el feed no hay etiqueta que diga quien entrega y
+  quien recibe: se deduce del orden. Una inversion pondria del reves el saldo de los nueve
+  rivales sin dar ningun sintoma, asi que cada ejecucion lo contrasta contra el libro
+  propio usando los traspasos que aparecen en ambos sitios. Ultima: 7 coinciden, 0
+  discrepan.
+
+Quedan abiertas las incognitas de [docs/INCOGNITAS.md](docs/INCOGNITAS.md) que no se pueden
+cerrar observando: si el margen de deuda del 25% sirve para pagar clausulas, la base de
+coste de las cesiones y si Mister sigue el horario de verano.
 
 ## Reglas de la liga
 
