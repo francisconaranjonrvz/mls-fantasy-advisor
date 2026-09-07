@@ -148,6 +148,36 @@ export function refundOnLowering(spent: Euros): Euros {
  */
 export const CLAUSE_EFFECTIVE_RATE_IF_UNWOUND = CLAUSE_EXCHANGE_RATE * (1 - CLAUSE_REFUND_PCT)
 
+/**
+ * Lo maximo que un manager PUDO gastar en subir la clausula de un jugador.
+ *
+ * Sale directamente del tipo de cambio y no hace falta saber nada mas que lo
+ * que se ve. Si la clausula es C, el valor de mercado es V y la base es
+ * B = max(precio de compra, V), entonces subir n tramos deja C = (1,5+0,5n)B y
+ * cuesta 0,2Bn, o sea 0,40(C - 1,5B). Como B nunca es menor que V, sustituir B
+ * por V da una cota superior:
+ *
+ *     gasto <= 0,40 x (C - 1,5V)
+ *
+ * Y como la clausula por defecto es exactamente 1,5B, cualquier jugador cuya
+ * clausula no pase de 1,5 veces su valor no costo un euro. Con datos reales
+ * esto cambia mucho las cosas: la cota de gasto en clausulas de un rival pasa
+ * de los veintitantos millones que daba suponer el 40% del valor del equipo a
+ * entre 0,7M y 6,5M segun el rival, y esa diferencia se traduce entera en un
+ * intervalo de saldo mas estrecho.
+ */
+export function maxClauseSpend(player: { clause?: Euros | undefined; value: Euros }): Euros {
+  if (!player.clause || player.clause <= 0) return 0
+  return Math.max(0, Math.round(CLAUSE_EXCHANGE_RATE * (player.clause - 1.5 * player.value)))
+}
+
+/** La misma cota para una plantilla entera. */
+export function maxClauseSpendForSquad(
+  squad: { clause?: Euros | undefined; value: Euros }[],
+): Euros {
+  return squad.reduce((acc, p) => acc + maxClauseSpend(p), 0)
+}
+
 /** Un jugador esta blindado si su ventana de 7 dias post-fichaje sigue abierta. */
 export function isShielded(player: Pick<OwnedPlayer, 'shieldedUntil'>, now: Date): boolean {
   if (!player.shieldedUntil) return false

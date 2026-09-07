@@ -81,6 +81,16 @@ export interface ManagerLedger {
    * supuesto y nunca como cifra exacta.
    */
   initialSquadValueHint?: Euros | undefined
+  /**
+   * Cota superior de lo que pudo gastar en subir clausulas, si se conoce.
+   *
+   * El feed no publica las modificaciones de clausula de los rivales, asi que
+   * ese gasto es invisible. Pero no es ilimitado: se deduce de las clausulas
+   * que si se ven (ver maxClauseSpendForSquad). Sin esta cota habia que
+   * suponer el 40% del valor del equipo, que son veintitantos millones y
+   * dejaba el intervalo de todos los rivales pegado a cero por abajo.
+   */
+  maxClauseSpend?: Euros | undefined
   /** Puesto en cada jornada cerrada. Da la bonificacion exacta. */
   jornadaRanks?: { jornada: number; rank: number }[] | undefined
   /** Jornadas en las que puntuo: prueba de que no estaba en negativo. */
@@ -274,8 +284,10 @@ export function reconstructBalance(
       low += Math.min(...config.jornadaRankBonus) * jornadas
       high += Math.max(...config.jornadaRankBonus) * jornadas
     }
-    // Nadie puede haber gastado en clausulas mas que el valor de su plantilla.
-    low -= Math.round(ledger.teamValue * 0.4)
+    // Lo que pudo gastar en clausulas sin que se vea. Si se conocen sus
+    // clausulas, la cota sale de ellas y es mucho mas estrecha que suponer una
+    // fraccion del valor del equipo.
+    low -= ledger.maxClauseSpend ?? Math.round(ledger.teamValue * 0.4)
   }
 
   const constraintsApplied: string[] = []

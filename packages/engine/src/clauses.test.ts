@@ -3,6 +3,7 @@ import { M } from '@mls/core'
 import {
   clauseBase, defaultClause, clauseForTier, tierCost, upgradeCost,
   cheapestTierAbove, effectiveClause, refundOnLowering,
+  maxClauseSpend, maxClauseSpendForSquad, maxAffordableTier,
   CLAUSE_EXCHANGE_RATE, CLAUSE_FLOOR, CLAUSE_TIERS,
 } from './clauses.ts'
 
@@ -115,5 +116,53 @@ describe('subidas parciales y devoluciones', () => {
 
   it('bajar la cláusula devuelve la mitad de lo invertido', () => {
     expect(refundOnLowering(M(4))).toBe(M(2))
+  })
+})
+
+describe('cuanto pudo gastar un rival en subir clausulas', () => {
+  /**
+   * El feed no publica las modificaciones de clausula de los rivales, asi que
+   * ese gasto es invisible. Pero se deduce de las clausulas que si se ven, y
+   * la cota sale sola del tipo de cambio: subir n tramos deja la clausula en
+   * (1,5+0,5n)B y cuesta 0,2Bn, que es 0,40(C - 1,5B). Como la base nunca es
+   * menor que el valor de mercado, poner el valor en su lugar da una cota
+   * superior.
+   */
+  it('el que tiene la clausula por defecto no gasto nada', () => {
+    expect(maxClauseSpend({ value: M(10), clause: M(15) })).toBe(0)
+  })
+
+  it('la cota es 0,40 por cada euro de clausula por encima de la de por defecto', () => {
+    // De 15M a 20M son 5M de mas, que a 0,40 son 2M. Y coincide con el coste
+    // real del tramo 1 sobre una base de 10M: 0,2 x 10M x 1.
+    expect(maxClauseSpend({ value: M(10), clause: M(20) })).toBe(M(2))
+    expect(tierCost(M(10), 1)).toBe(M(2))
+  })
+
+  it('nunca se queda corta cuando el valor ha bajado desde que se pago', () => {
+    // Compro a 10M, subio un tramo (2M) y el jugador cayo a 5M. La clausula
+    // se congela en 20M. La cota mira el valor de hoy, que es menor, asi que
+    // sale mas alta que el gasto real. Eso es lo que tiene que pasar: es una
+    // cota, y equivocarse por arriba mantiene el intervalo honesto.
+    expect(maxClauseSpend({ value: M(5), clause: M(20) })).toBeGreaterThanOrEqual(M(2))
+  })
+
+  it('ignora al que no tiene clausula conocida', () => {
+    expect(maxClauseSpend({ value: M(10) })).toBe(0)
+  })
+
+  it('suma la plantilla entera', () => {
+    expect(maxClauseSpendForSquad([
+      { value: M(10), clause: M(15) },
+      { value: M(10), clause: M(20) },
+      { value: M(4), clause: M(12) },
+    ])).toBe(M(2) + Math.round(0.4 * (M(12) - M(6))))
+  })
+})
+
+describe('el tramo maximo', () => {
+  it('es el tercero, que triplica la base', () => {
+    expect(maxAffordableTier(M(10))).toBe(3)
+    expect(clauseForTier(M(10), 3)).toBe(M(30))
   })
 })

@@ -7,6 +7,7 @@ import {
   buildValuationContext, reconstructBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
   optimizeLineup, bestSubstitution, auditHistory, marketBenchmark, observedInitialCash,
+  maxClauseSpendForSquad,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
   type Calibration, type HistoryAudit,
 } from '@mls/engine'
@@ -210,6 +211,7 @@ export function analyze(
         // Con el puesto de cada jornada, la bonificacion deja de ser un rango
         // de 1,0M a 1,5M por jornada y pasa a ser una cifra exacta.
         jornadaRanks: ranksByManager.get(m.id),
+        maxClauseSpend: maxClauseSpendForSquad(m.squad),
         initialSquadValue: initialSquadValue(m.id),
         // Sin baseline declarado, se le supone el reparto que se observo en la
         // cuenta propia. Es una suposicion y el intervalo lo dice.
