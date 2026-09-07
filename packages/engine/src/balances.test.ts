@@ -419,14 +419,26 @@ describe('la caja inicial se lee, no se supone', () => {
     expect(conMedida.estimate).toBe(12_472_000)
   })
 
-  it('el supuesto se declara como tal en las incognitas', () => {
-    const est = reconstructBalance(
+  it('el supuesto se declara como tal, y dice CUAL de los dos se ha usado', () => {
+    // Sin medida propia solo queda la regla de la liga, que se observo una vez.
+    const porRegla = reconstructBalance(
+      { managerId: 2, transactions: [], historyComplete: true, teamValue: M(50) },
+      MLS_LEAGUE,
+    )
+    expect(porRegla.unknowns.join(' ')).toMatch(/regla del reparto/)
+    expect(porRegla.exact).toBe(false)
+
+    // Con el reparto reconstruido rival por rival, el dato es mucho mejor y la
+    // duda que queda es otra: los conservados se valoran a precio de hoy. Decir
+    // "regla del reparto" en este caso era describir mal lo que se ha hecho.
+    const reconstruido = reconstructBalance(
       { managerId: 2, transactions: [], historyComplete: true, teamValue: M(50),
         initialSquadValueHint: M(37.5) },
       MLS_LEAGUE,
     )
-    expect(est.unknowns.join(' ')).toMatch(/regla del reparto/)
-    expect(est.exact).toBe(false)
+    expect(reconstruido.unknowns.join(' ')).not.toMatch(/regla del reparto/)
+    expect(reconstruido.unknowns.join(' ')).toMatch(/precio de HOY/)
+    expect(reconstruido.exact).toBe(false)
   })
 
   it('si la solvencia no cuadra con la regla, manda lo observado y se declara', () => {

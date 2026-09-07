@@ -266,12 +266,20 @@ export function reconstructBalance(
   const initialSquadHigh = known0 ? initialSquadValue : centro + margen
 
   if (!known0 && !txs.some((t) => t.type === 'seed')) {
+    // Que diga cual de los dos caminos se ha seguido, porque no valen igual.
+    // Antes ponia siempre "regla del reparto (75%)" aunque se hubiera
+    // reconstruido rival por rival, que es un dato mucho mejor, y quien leia
+    // el informe no podia saber cual de las dos cosas estaba mirando.
     unknowns.push(
-      `la plantilla inicial se toma de la regla del reparto (${Math.round(
-        config.initialSquadPctOfBudget * 100,
-      )}% del presupuesto) con un margen del ${Math.round(
-        config.initialSquadTolerance * 100,
-      )}%; es una regla observada una vez, no un dato de cada rival`,
+      ledger.initialSquadValueHint !== undefined
+        ? 'la plantilla inicial se reconstruye desde el feed (lo que tiene hoy, menos lo ' +
+          'que compro, mas lo que vendio), pero los jugadores que conserva del reparto se ' +
+          'valoran a precio de HOY: Mister no publica lo que valian el 17 de agosto'
+        : `la plantilla inicial se toma de la regla del reparto (${Math.round(
+            config.initialSquadPctOfBudget * 100,
+          )}% del presupuesto) con un margen del ${Math.round(
+            config.initialSquadTolerance * 100,
+          )}%; es una regla observada una vez, no un dato de cada rival`,
     )
   }
 
