@@ -20,13 +20,32 @@ const CATALOG: Player[] = Array.from({ length: 21 }, (_, i) => ({
 const CTX = buildValuationContext(CATALOG, 10, 38)
 
 describe('valoracion deportiva', () => {
-  it('deriva el precio del punto como mediana del catalogo', () => {
-    expect(derivePricePerPoint(CATALOG)).toBe(M(1))
+  it('el precio del punto se refiere a los puntos que QUEDAN, no a los acumulados', () => {
+    // 21 jugadores identicos a 10M y 1 punto por jornada. Quedan 28 jornadas,
+    // asi que a cada uno le quedan 28 puntos y su punto sale a 10M/28.
+    expect(derivePricePerPoint(CATALOG, CTX)).toBeCloseTo(M(10) / 28, 0)
   })
 
-  it('ignora a los que no puntuan para no romper la mediana', () => {
-    const conBanquillo = [...CATALOG, { ...CATALOG[0]!, id: 9999, points: 0 }]
-    expect(derivePricePerPoint(conBanquillo)).toBe(M(1))
+  it('deja el jugador mediano valiendo exactamente lo que cuesta', () => {
+    // Es la propiedad que hace interpretable el ratio: por encima de 1 el
+    // jugador esta barato para lo que rinde, por debajo esta caro.
+    expect(sportingValue(CATALOG[0]!, CTX)).toBeCloseTo(M(10), -4)
+  })
+
+  it('no proyecta nada de quien no ha jugado ni un minuto', () => {
+    // Un suplente con cero puntos no es una incognita a la que aplicar la
+    // media de su posicion: es informacion de que no juega.
+    const suplente = { ...CATALOG[0]!, id: 9999, points: 0 }
+    expect(sportingValue(suplente, CTX)).toBe(0)
+    expect(derivePricePerPoint([...CATALOG, suplente], CTX)).toBeCloseTo(M(10) / 28, 0)
+  })
+
+  it('encoge la media del que apenas tiene partidos hacia la de su posicion', () => {
+    // Con 10 jornadas jugadas el peso del jugador es 10/(10+4). Un jugador que
+    // dobla la media de la liga no se proyecta al doble, sino a 10/14*2+4/14*1.
+    const estrella = { ...CATALOG[0]!, id: 8888, points: 20 }
+    const esperado = ((10 / 14) * 2 + (4 / 14) * 1) * M(10)
+    expect(sportingValue(estrella, CTX)).toBeCloseTo(esperado, -4)
   })
 
   it('un jugador sin equipo en LaLiga no vale nada deportivamente', () => {
@@ -304,14 +323,15 @@ describe('proteger quitando el incentivo, no la capacidad', () => {
 
   it('sube solo lo justo para que el robo deje de compensar, sin perseguir el saldo del rival', () => {
     // Base 6M => clausula por defecto 9M, tramos 12 / 15 / 18M.
-    // 6 puntos en 10 jornadas => 0,6/jornada => 16,8 pts restantes => 16,8M.
-    // El tramo 3 (18M) es el primero que supera esos 16,8M de valor deportivo.
+    // 20 puntos en 10 jornadas, encogidos hacia el prior, dan 1,71/jornada:
+    // 48 puntos restantes, que al precio del punto son 17,1M. El tramo 3
+    // (18M) es el primero que supera esa cifra.
     const varios: RivalCapacity[] = [
       { managerId: 2, name: 'Rico', capacity: M(60), capacityLow: M(45) },
       { managerId: 3, name: 'Rico2', capacity: M(55), capacityLow: M(40) },
       { managerId: 4, name: 'Rico3', capacity: M(50), capacityLow: M(35) },
     ]
-    const jugador = owned({ id: 60, name: 'Bueno', value: M(6), points: 6, purchasePrice: M(6) })
+    const jugador = owned({ id: 60, name: 'Bueno', value: M(6), points: 20, purchasePrice: M(6) })
     const a = assessPlayerThreat(jugador, varios, CTX, MLS_LEAGUE, NOW)
 
     expect(a.sportingValue).toBeGreaterThan(a.clause)
@@ -327,7 +347,7 @@ describe('proteger quitando el incentivo, no la capacidad', () => {
     // Mismo jugador pero con un solo rival: menos presion, menos perdida
     // esperada, y entonces los 4M del tramo no salen a cuenta.
     const uno: RivalCapacity[] = [{ managerId: 2, name: 'Rico', capacity: M(60), capacityLow: M(45) }]
-    const jugador = owned({ id: 63, name: 'Bueno', value: M(10), points: 8, purchasePrice: M(10) })
+    const jugador = owned({ id: 63, name: 'Bueno', value: M(10), points: 18, purchasePrice: M(10) })
     const a = assessPlayerThreat(jugador, uno, CTX, MLS_LEAGUE, NOW)
     expect(a.advice.action).toBe('nada')
     expect(a.advice.cost).toBeGreaterThan(a.expectedLoss)

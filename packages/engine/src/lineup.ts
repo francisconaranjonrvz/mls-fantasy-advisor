@@ -1,5 +1,5 @@
 import type { OwnedPlayer, Position, LeagueConfig } from '@mls/core'
-import { pointsPerJornada, type ValuationContext } from './valuation.ts'
+import { expectedPointsPerJornada, type ValuationContext } from './valuation.ts'
 
 /**
  * Eleccion del once.
@@ -43,7 +43,13 @@ export const FORMATIONS: readonly Formation[] = [
 export function expectedJornadaPoints(player: OwnedPlayer, ctx: ValuationContext): number {
   // Sin equipo en LaLiga no hay partido que jugar, asi que no hay puntos.
   if (!player.hasTeam) return 0
-  const base = pointsPerJornada(player, ctx)
+  // La misma proyeccion que usa la valoracion, no la media cruda. Si aqui se
+  // usara la media a pelo, el once y el analisis de fichajes hablarian de
+  // jugadores distintos: uno diria que el fichaje aporta 2 puntos y el otro
+  // que 1,4, y ninguna de las dos cifras seria comparable con la otra.
+  const base = expectedPointsPerJornada(player, ctx)
+  // La disponibilidad de cara al sabado es mas dura que la de temporada: un
+  // lesionado no puntuara ESTA jornada aunque vaya a volver dentro de tres.
   const availability =
     player.status === 'injured' ? 0
     : player.status === 'sanctioned' ? 0

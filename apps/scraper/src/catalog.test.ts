@@ -45,7 +45,9 @@ describe('normalizePlayer', () => {
   it('lee el club de id_team: sin club, el jugador ya no puntua', () => {
     expect(normalizePlayer(RAPHINHA)?.hasTeam).toBe(true)
     expect(normalizePlayer(owned({ id_team: 0 }))?.hasTeam).toBe(false)
-    expect(normalizePlayer(owned({ id_team: undefined }))?.hasTeam).toBe(false)
+    const sinClub = { ...RAPHINHA }
+    delete sinClub.id_team
+    expect(normalizePlayer(sinClub)?.hasTeam).toBe(false)
   })
 
   it('trata status a null como sano, porque la ausencia es informacion', () => {
