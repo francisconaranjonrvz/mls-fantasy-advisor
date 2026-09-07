@@ -113,6 +113,15 @@ export interface Transaction {
   balanceAfter?: Euros | undefined
   /** Jornada asociada (bonificaciones). */
   jornada?: number | undefined
+  /**
+   * Identificador estable del apunte en su fuente.
+   *
+   * Hace falta para acumular el libro entre ejecuciones sin duplicar. El libro
+   * propio se deduplica por fecha y saldo resultante, que son datos exactos,
+   * pero los apuntes del feed no traen saldo, asi que necesitan una clave
+   * propia: el id del traspaso, o uno derivado para lo que no lo tiene.
+   */
+  reference?: string | undefined
 }
 
 /** Resultado de una jornada para un manager. */

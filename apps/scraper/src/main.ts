@@ -51,7 +51,9 @@ async function main(): Promise<void> {
   const demoData = useDemo ? buildDemoSnapshot() : null
   const result = demoData ?? (await ingest(config))
 
-  const { snapshot, transactions, rivalTransactions, warnings, progression } = result
+  const {
+    snapshot, transactions, rivalTransactions, warnings, progression, feedComplete,
+  } = result
 
   // --- Validacion antes de tocar el disco ---
   const parsed = leagueSnapshotSchema.safeParse(snapshot)
@@ -93,6 +95,7 @@ async function main(): Promise<void> {
     new Date(),
     baseline,
     progression,
+    feedComplete,
   )
   console.log('\n' + renderConsoleSummary(diagnosis) + '\n')
 
@@ -133,13 +136,39 @@ async function main(): Promise<void> {
   // (fecha, saldo resultante y jugador): si incluyera el importe, que lo
   // calcula el parser, cualquier correccion duplicaria las filas en vez de
   // corregirlas. Ya paso una vez.
+  // Se guardan los apuntes de TODOS los managers, no solo los propios.
+  //
+  // Sin esto el libro rival se reconstruia entero en cada ejecucion y dependia
+  // de que el feed siguiera alcanzando el principio de temporada para siempre.
+  // Guardandolo, la carga completa se hace una vez y despues cada ejecucion
+  // solo anade lo nuevo, que es como funciona la contabilidad de verdad.
+  //
+  // La clave de deduplicacion no puede ser la misma para las dos fuentes. El
+  // libro propio trae el saldo resultante, que es un dato exacto y unico; los
+  // apuntes del feed no, pero traen el id del traspaso, que tambien lo es.
+  const todosLosApuntes = [...transactions, ...rivalTransactions]
   const txStats = writeTransactionsMerged(
     paths.transactions,
-    ['date', 'managerId', 'type', 'amount', 'counterpartyId', 'playerName', 'balanceAfter'],
-    transactions.map((t) => [
-      t.date, t.managerId, t.type, t.amount, t.counterpartyId ?? '', t.playerName ?? '', t.balanceAfter ?? '',
+    [
+      'date', 'managerId', 'type', 'amount', 'counterpartyId', 'playerId',
+      'playerName', 'balanceAfter', 'reference',
+    ],
+    todosLosApuntes.map((t) => [
+      t.date, t.managerId, t.type, t.amount, t.counterpartyId ?? '', t.playerId ?? '',
+      t.playerName ?? '', t.balanceAfter ?? '', t.reference ?? '',
     ]),
-    (row) => `${row[0]}|${row[6]}|${row[5]}`,
+    // El libro propio se identifica por su saldo resultante, que es exacto y
+    // unico; los apuntes del feed, por el id del traspaso, que tambien lo es.
+    (row) => {
+      const campo = (i: number): string => {
+        const v = row[i]
+        return typeof v === 'string' ? v
+          : typeof v === 'number' || typeof v === 'boolean' ? String(v)
+          : ''
+      }
+      const ref = campo(8)
+      return ref ? `ref:${ref}|${campo(1)}` : `own:${campo(0)}|${campo(7)}|${campo(6)}`
+    },
   )
   console.log(
     `[main] libro de movimientos: ${txStats.total} en total, ` +

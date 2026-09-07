@@ -244,6 +244,27 @@ export class MisterEndpoints {
     return all
   }
 
+  /**
+   * El feed entero, paginando hacia atras hasta el principio de temporada.
+   *
+   * Contra la liga real son 22 paginas y 414 entradas, y el servidor avisa
+   * cuando se acaban. El tope existe solo para que un cambio en el servidor no
+   * pueda convertir esto en un bucle infinito.
+   */
+  async getAllFeed(maxPages = 60): Promise<{ items: RawFeedItem[]; complete: boolean }> {
+    const all: RawFeedItem[] = []
+    for (let page = 0; page < maxPages; page++) {
+      const { items, end } = await this.getFeedPage(page * FEED_PAGE_SIZE)
+      all.push(...items)
+      // Solo se declara completo si fue el SERVIDOR quien dijo que no hay mas.
+      // Si se acabaran las paginas permitidas, el historial estaria cortado y
+      // dar por completo lo que no lo es convertiria una estimacion honesta en
+      // una cifra falsamente exacta.
+      if (end || items.length === 0) return { items: all, complete: true }
+    }
+    return { items: all, complete: false }
+  }
+
   /** Historico de puntos y de valor de un jugador. */
   async getPlayerDetail(playerId: number): Promise<PlayerDetail> {
     const res = await this.http.postForm<AjaxEnvelope<PlayerDetail>>('/ajax/sw/players', {

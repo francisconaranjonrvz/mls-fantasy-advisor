@@ -71,6 +71,15 @@ export interface ManagerLedger {
   transactions: Transaction[]
   /** Si el historial no llega al inicio de temporada, la estimacion es debil. */
   historyComplete: boolean
+  /**
+   * Si los cobros de quiniela de este manager estan observados.
+   *
+   * Estuvo modelada como la unica incognita irreducible: 25.000 por acierto,
+   * visible solo en el libro propio. Resulta que el feed publica la tabla de
+   * los diez al cerrar cada jornada, asi que cuando esos apuntes estan en el
+   * libro no hay nada que estimar.
+   */
+  quinielaObserved?: boolean | undefined
   teamValue: Euros
   /**
    * Valor de plantilla inicial que se le SUPONE, por analogia con el propio.
@@ -257,7 +266,9 @@ export function reconstructBalance(
   // estrechaba fingiendo que no habia habido temporada.
   const jornadasPlayed = ledger.jornadaRanks?.length ?? ledger.scoredJornadas?.length ?? 0
 
-  const [qLow, qHigh] = quinielaRange(jornadasPlayed, config)
+  const [qLow, qHigh] = ledger.quinielaObserved
+    ? ([0, 0] as [Euros, Euros])
+    : quinielaRange(jornadasPlayed, config)
   if (qHigh > 0) unknowns.push('los aciertos de quiniela no son observables')
 
   const [sLow, sHigh] = salaryRange(

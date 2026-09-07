@@ -66,6 +66,7 @@ export const transactionSchema = z.object({
   playerName: z.string().optional(),
   balanceAfter: z.number().int().optional(),
   jornada: z.number().int().positive().optional(),
+  reference: z.string().optional(),
 })
 
 export const marketEntrySchema = z.object({

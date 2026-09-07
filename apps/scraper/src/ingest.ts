@@ -1,14 +1,17 @@
 import {
   MisterHttp, MisterEndpoints, authenticate, parsePlayerRows, parseSquad, parseMarket,
   parseStandingsMembers, parseCurrentJornada, movementsToTransactions,
-  parseFeedTransfers, feedTransfersToTransactions,
+  transfersToTransactions, poolsToTransactions, paymentsToTransactions,
+  clauseChangesToTransactions,
   readClause, readPurchasePrice,
 } from '@mls/mister-client'
 import { MLS_LEAGUE, parseEuros, POSITION_BY_CODE } from '@mls/core'
 import type {
   LeagueSnapshot, Manager, Player, PlayerStatus, Transaction, MarketEntry,
 } from '@mls/core'
-import type { BalanceInfo, RawPlayerRecord, LeagueProgression } from '@mls/mister-client'
+import type {
+  BalanceInfo, RawPlayerRecord, LeagueProgression,
+} from '@mls/mister-client'
 import type { ScraperConfig } from './config.ts'
 
 /**
@@ -31,8 +34,10 @@ export interface IngestResult {
   snapshot: LeagueSnapshot
   /** Libro propio, autoritativo: trae fecha exacta y saldo resultante. */
   transactions: Transaction[]
-  /** Movimientos de rivales deducidos del feed. Sin fecha exacta ni saldo. */
+  /** Movimientos de rivales, del feed en JSON, con fecha e importe exactos. */
   rivalTransactions: Transaction[]
+  /** Si el feed llego al principio de temporada. Decide si el saldo es exacto. */
+  feedComplete: boolean
   balance: BalanceInfo | null
   /** Puesto de cada manager en cada jornada cerrada. Da bonificaciones exactas. */
   progression: LeagueProgression
@@ -269,55 +274,82 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   //
   // /ajax/sw/balance devuelve solo el libro propio, asi que sin esto los saldos
   // ajenos no se pueden reconstruir y todo el analisis de clausulas se queda
-  // mudo. El feed publica cada traspaso con sus dos partes y su importe.
+  // mudo.
+  //
+  // Se lee de /ajax/feed, en JSON y paginado hasta el principio de temporada,
+  // no del HTML de /feed. La diferencia no es de comodidad: el HTML solo trae
+  // la primera pagina, 17 tarjetas de las 414 que hay, y no dice quien entrega
+  // y quien recibe en un traspaso, asi que habia que deducirlo del orden en que
+  // aparecen los dos managers dentro de un div. El JSON trae id_uc_from e
+  // id_uc_to explicitos, y ademas publica la quiniela y las modificaciones de
+  // clausula de todos, que en el HTML no se veian.
   let rivalTransactions: Transaction[] = []
+  // Si el feed llega al principio de temporada, el libro de cada rival esta
+  // completo y su saldo deja de ser una estimacion. Si no llega, hay que
+  // seguir tratandolo como estimacion aunque casi todo cuadre.
+  let feedComplete = false
   try {
-    const feedHtml = await api.getFeedHtml()
-    const transfers = parseFeedTransfers(feedHtml)
-    // El feed da el id del jugador pero no su nombre, asi que se resuelve con
-    // el catalogo. Sin nombre no hay forma de contrastar la direccion inferida
-    // contra el libro propio, que es la unica verificacion disponible.
-    const nombrePorId = new Map(players.map((p) => [p.id, p.name]))
-    const all = feedTransfersToTransactions(transfers, snapshotAt, (id) => nombrePorId.get(id))
-    // Los propios se descartan: para uno mismo manda el libro de balance, que
-    // es autoritativo y trae fecha y saldo resultante.
-    rivalTransactions = all.filter((t) => t.managerId !== selfId)
-    log(`${transfers.length} traspasos en el feed, ${rivalTransactions.length} apuntes de rivales`)
+    const { items, complete } = await api.getAllFeed()
+    feedComplete = complete
+    const categorias = new Map<string, number>()
+    for (const it of items) {
+      const c = typeof it['category'] === 'string' ? it['category'] : '?'
+      categorias.set(c, (categorias.get(c) ?? 0) + 1)
+    }
+    log(
+      `feed: ${items.length} entradas, ${complete ? 'llega al principio' : 'CORTADO'} ` +
+        `(${[...categorias].sort((a, b) => b[1] - a[1]).slice(0, 4)
+          .map(([c, n]) => `${c} ${n}`).join(', ')})`,
+    )
 
-    const propios = all.filter((t) => t.managerId === selfId)
-    log(`  de ellos, ${propios.length} apuntes propios utilizables para contrastar`)
-    if (propios.length === 0) {
+    const porNombre = new Map(managers.map((m) => [m.name.toLowerCase().trim(), m.id]))
+    const resolver = (nombre: string): number | undefined =>
+      porNombre.get(nombre.toLowerCase().trim())
+
+    const todos = [
+      ...transfersToTransactions(items),
+      ...poolsToTransactions(items),
+      ...clauseChangesToTransactions(items, resolver),
+      ...paymentsToTransactions(items, resolver),
+    ]
+
+    // Los propios se descartan: para uno mismo manda el libro de balance, que
+    // es autoritativo y trae el saldo resultante de cada apunte.
+    rivalTransactions = todos.filter((t) => t.managerId !== selfId)
+    const propios = todos.filter((t) => t.managerId === selfId)
+    log(`${todos.length} apuntes del feed, ${rivalTransactions.length} de rivales`)
+
+    if (todos.length === 0) {
+      warn('el feed no devolvio ningun apunte: sin ellos no hay saldos rivales')
+    }
+    if (!complete) {
       warn(
-        'ningun traspaso del feed te implica a ti, asi que la direccion inferida ' +
-          '(quien entrega y quien recibe) NO se ha podido verificar contra el libro propio. ' +
-          'Si estuviera invertida, los saldos rivales saldrian del reves en silencio.',
+        'el feed se agoto antes de llegar al principio de temporada, asi que el libro de los ' +
+          'rivales esta incompleto y su saldo sigue siendo una estimacion',
       )
     }
+
+    // La verificacion sigue siendo necesaria aunque la direccion ya no se
+    // deduzca: prueba que la lectura del feed y la del libro propio hablan de
+    // lo mismo. Si no coincidieran, el error estaria en el lado de los rivales
+    // y no daria ningun sintoma por si solo.
     if (propios.length > 0) {
-      // La direccion del traspaso se infiere del orden dentro de .flow, no de
-      // una etiqueta. Contrastarla contra el libro propio, que si es
-      // autoritativo, es la unica forma de saber si la inferencia es correcta.
       const check = crossCheckDirection(propios, transactions)
       log(
-        `contraste de direccion con el libro propio: ${check.coinciden} coinciden, ` +
+        `contraste con el libro propio: ${check.coinciden} coinciden, ` +
           `${check.discrepan} discrepan, ${check.sinPareja} sin pareja`,
       )
-      if (check.coinciden === 0 && check.discrepan === 0) {
-        warn(
-          `los ${propios.length} apuntes propios del feed no casan con ninguna entrada del ` +
-            'libro por nombre e importe, asi que la direccion sigue sin verificar. ' +
-            'Puede ser que el feed muestre solo operaciones recientes o que el nombre difiera.',
-        )
-      }
       if (check.discrepan > check.coinciden) {
         warn(
-          'la direccion inferida de los traspasos del feed contradice el libro propio en la ' +
-            'mayoria de los casos: probablemente esta invertida, y los saldos rivales saldrian al reves',
+          'los apuntes propios del feed contradicen el libro de balance en la mayoria de los ' +
+            'casos; los saldos rivales heredarian ese error',
         )
       }
-    }
-    if (transfers.length === 0) {
-      warn('el feed no devolvio ningun traspaso: sin ellos no hay saldos rivales')
+    } else {
+      warn(
+        'ningun apunte del feed te implica a ti, asi que la lectura del feed no se ha podido ' +
+          'contrastar contra el libro propio, que es la unica verificacion disponible',
+      )
     }
   } catch (err) {
     warn(`no se pudo leer el feed de actividad: ${String(err)}`)
@@ -346,6 +378,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     snapshot,
     transactions,
     rivalTransactions,
+    feedComplete,
     balance,
     progression,
     warnings,

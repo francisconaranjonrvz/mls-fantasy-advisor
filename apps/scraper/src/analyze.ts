@@ -153,6 +153,11 @@ export function analyze(
   now = new Date(),
   baseline?: SeasonBaseline | null,
   progression?: LeagueProgression | null,
+  /**
+   * Si el feed llego al principio de temporada. Cuando llega, el libro de los
+   * rivales esta completo y su saldo deja de ser una estimacion.
+   */
+  feedComplete = false,
 ): Diagnosis {
   const config = MLS_LEAGUE
 
@@ -191,6 +196,12 @@ export function analyze(
   // medias y todo el calculo del bote.
   const jornadasPlayed = valuation.jornadasPlayed
   const segunLaPagina = Math.max(0, snapshot.currentJornada - 1)
+
+  // De quien se han visto cobros de quiniela en el feed. Sin esto habria que
+  // seguir tratandola como incognita aunque los apuntes ya esten en el libro.
+  const quinielaVista = new Set(
+    transactions.filter((t) => t.type === 'quiniela').map((t) => t.managerId),
+  )
 
   // Puestos por jornada, indexados por manager.
   const ranksByManager = new Map(
@@ -231,11 +242,12 @@ export function analyze(
         // cuenta propia. Es una suposicion y el intervalo lo dice.
         initialSquadValueHint: plantillaInicialPropia,
         transactions: txs,
-        // El feed publica los traspasos pero no las bonificaciones ni las
-        // modificaciones de clausula, asi que el historial rival nunca es
-        // completo. Se marca como tal para que el intervalo lo refleje en vez
-        // de fingir precision.
-        historyComplete: false,
+        // Con /ajax/feed paginado hasta el principio de temporada, el libro
+        // rival deja de estar cortado: trae traspasos, quiniela, cambios de
+        // clausula y pagos. Solo se declara completo si el servidor confirmo
+        // que no quedaban mas paginas.
+        historyComplete: feedComplete,
+        quinielaObserved: quinielaVista.has(m.id),
         teamValue: m.teamValue,
         averageLineupValue: Math.round(m.teamValue * 0.6),
         // Si ha puntuado es que no arranco la jornada en negativo, porque

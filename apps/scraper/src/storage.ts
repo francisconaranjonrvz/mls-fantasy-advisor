@@ -172,15 +172,27 @@ export function writeTransactionsMerged(
   header: string[],
   rows: unknown[][],
   keyOf: (row: unknown[]) => string,
-): { total: number; added: number; updated: number } {
+): { total: number; added: number; updated: number; migrated: boolean } {
   ensureDir(path)
 
   const stored = new Map<string, unknown[]>()
+  let migrated = false
+
   if (existsSync(path)) {
-    for (const line of readFileSync(path, 'utf8').split('\n').slice(1)) {
-      if (!line.trim()) continue
-      const parsed = parseCsvLine(line)
-      stored.set(keyOf(parsed), parsed)
+    const lines = readFileSync(path, 'utf8').split('\n')
+    const cabecera = parseCsvLine(lines[0] ?? '').map(String)
+    // Si las columnas han cambiado, las filas viejas no se pueden interpretar
+    // con la clave nueva: se leerian desplazadas y acabarian duplicadas con los
+    // campos cruzados. Como el libro entero se puede volver a derivar del feed
+    // y del balance propio, se descarta y se reescribe, que es mas seguro que
+    // arrastrar filas mal alineadas.
+    migrated = cabecera.length > 0 && cabecera.join(',') !== header.join(',')
+    if (!migrated) {
+      for (const line of lines.slice(1)) {
+        if (!line.trim()) continue
+        const parsed = parseCsvLine(line)
+        stored.set(keyOf(parsed), parsed)
+      }
     }
   }
 
@@ -202,5 +214,5 @@ export function writeTransactionsMerged(
   const all = [...stored.values()].sort((a, b) => String(a[0]).localeCompare(String(b[0])))
   writeFileSync(path, toCsvLine(header) + all.map(toCsvLine).join(''), 'utf8')
 
-  return { total: all.length, added, updated }
+  return { total: all.length, added, updated, migrated }
 }
