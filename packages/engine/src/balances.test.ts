@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { M, MLS_LEAGUE, type Transaction, type LeagueConfig } from '@mls/core'
 import {
   reconstructBalance, bonusesFromRanks, quinielaRange, salaryRange,
-  calibrate, exactBalance, spendingCapacity,
+  calibrate, exactBalance, spendingCapacity, observedInitialCash,
 } from './balances.ts'
 
 const tx = (
@@ -247,5 +247,67 @@ describe('intervalos acotados por las reglas, no a bulto', () => {
       MLS_LEAGUE,
     )
     expect(completo.high - completo.low).toBeLessThan(parcial.high - parcial.low)
+  })
+})
+
+describe('la caja inicial se lee, no se supone', () => {
+  /**
+   * Mister no reparte 50M de saldo: reparte plantilla y acredita el resto. En
+   * la cuenta real ese apunte fue de 12,47M, o sea una plantilla inicial de
+   * 37,53M. El modelo suponia 25M de caja, asi que le sobraban doce millones y
+   * medio al saldo estimado de cada rival.
+   */
+  it('saca la caja inicial del apunte de saldo inicial del libro', () => {
+    const txs: Transaction[] = [
+      tx('seed', M(12.472)),
+      tx('bonus', M(1.2)),
+      tx('purchase', -M(3)),
+    ]
+    expect(observedInitialCash(txs)).toBe(M(12.472))
+  })
+
+  it('devuelve null si el libro no llega hasta el principio de temporada', () => {
+    expect(observedInitialCash([tx('purchase', -M(3))])).toBeNull()
+  })
+
+  it('la plantilla inicial supuesta estrecha mucho el intervalo del rival', () => {
+    const comun = {
+      managerId: 2,
+      transactions: [] as Transaction[],
+      historyComplete: true,
+      teamValue: M(50),
+    }
+    const aCiegas = reconstructBalance(comun, MLS_LEAGUE)
+    const conSupuesto = reconstructBalance(
+      { ...comun, initialSquadValueHint: M(37.5) },
+      MLS_LEAGUE,
+    )
+
+    const anchoCiego = aCiegas.high - aCiegas.low
+    const anchoSupuesto = conSupuesto.high - conSupuesto.low
+    expect(anchoSupuesto).toBeLessThan(anchoCiego)
+    // Y el centro se mueve a donde dice la observacion, no al 50% del
+    // presupuesto, que era una eleccion sin fundamento.
+    expect(conSupuesto.estimate).toBe(M(12.5))
+  })
+
+  it('el supuesto se declara como tal en las incognitas', () => {
+    const est = reconstructBalance(
+      { managerId: 2, transactions: [], historyComplete: true, teamValue: M(50),
+        initialSquadValueHint: M(37.5) },
+      MLS_LEAGUE,
+    )
+    expect(est.unknowns.join(' ')).toMatch(/se supone parecida a la propia/)
+    expect(est.exact).toBe(false)
+  })
+
+  it('un baseline declarado manda sobre el supuesto', () => {
+    const est = reconstructBalance(
+      { managerId: 2, transactions: [], historyComplete: true, teamValue: M(50),
+        initialSquadValue: M(30), initialSquadValueHint: M(37.5) },
+      MLS_LEAGUE,
+    )
+    expect(est.estimate).toBe(M(20))
+    expect(est.low).toBe(est.high)
   })
 })

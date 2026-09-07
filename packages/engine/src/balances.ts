@@ -72,6 +72,15 @@ export interface ManagerLedger {
   /** Si el historial no llega al inicio de temporada, la estimacion es debil. */
   historyComplete: boolean
   teamValue: Euros
+  /**
+   * Valor de plantilla inicial que se le SUPONE, por analogia con el propio.
+   *
+   * No es dato: es la observacion de la cuenta propia aplicada al rival, bajo
+   * el supuesto de que el reparto inicial fue equivalente para todos. Estrecha
+   * mucho el intervalo, asi que se mantiene como banda alrededor del valor
+   * supuesto y nunca como cifra exacta.
+   */
+  initialSquadValueHint?: Euros | undefined
   /** Puesto en cada jornada cerrada. Da la bonificacion exacta. */
   jornadaRanks?: { jornada: number; rank: number }[] | undefined
   /** Jornadas en las que puntuo: prueba de que no estaba en negativo. */
@@ -110,6 +119,16 @@ export function bonusesFromRanks(
  */
 export const INITIAL_SQUAD_VALUE_RANGE = { min: 0.4, max: 0.75 } as const
 
+/**
+ * Margen alrededor de la plantilla inicial supuesta por analogia.
+ *
+ * El reparto inicial de Mister sale del mismo mecanismo para los diez, asi que
+ * los valores deberian parecerse; un 20% cubre holgadamente la variacion sin
+ * fingir que son identicos. Sigue siendo mucho mas estrecho que el 0,40-0,75
+ * del presupuesto, que es lo unico que se podia decir sin ninguna observacion.
+ */
+export const HINTED_SQUAD_TOLERANCE = 0.2
+
 /** Formato 1X2 sobre todos los partidos: como mucho 10 aciertos por jornada. */
 const MAX_QUINIELA_HITS_PER_JORNADA = 10
 
@@ -134,6 +153,25 @@ export function salaryRange(
   return [-full, 0]
 }
 
+/**
+ * La caja con la que arranco un manager, leida de su propio libro.
+ *
+ * Mister no reparte 50M de saldo: reparte una plantilla y acredita lo que
+ * sobra. Ese apunte aparece una sola vez, antes de la primera jornada, y es
+ * dato exacto, no estimacion. De el sale ademas el valor de la plantilla
+ * inicial, que es la incognita que mas ensancha los intervalos de los rivales.
+ *
+ * Solo se puede leer del libro propio, porque el de los rivales no es visible.
+ * Pero sirve igual para ellos: el reparto es el mismo mecanismo para todos, asi
+ * que la caja propia es la mejor estimacion disponible de la ajena. Es una
+ * suposicion, y como tal se declara alli donde se usa.
+ */
+export function observedInitialCash(transactions: Transaction[]): Euros | null {
+  const seeds = transactions.filter((t) => t.type === 'seed')
+  if (seeds.length === 0) return null
+  return seeds.reduce((a, t) => a + t.amount, 0)
+}
+
 export function reconstructBalance(
   ledger: ManagerLedger,
   config: LeagueConfig,
@@ -145,15 +183,25 @@ export function reconstructBalance(
   // Si no se conoce la plantilla inicial, se propaga como RANGO en lugar de
   // suponer un punto y ensanchar despues a bulto.
   const known0 = ledger.initialSquadValue !== undefined
-  const initialSquadValue = ledger.initialSquadValue ?? config.initialBudget * 0.5
+  const hint = ledger.initialSquadValueHint
+  const initialSquadValue =
+    ledger.initialSquadValue ?? hint ?? config.initialBudget * 0.5
   const initialSquadLow = known0
     ? initialSquadValue
-    : config.initialBudget * INITIAL_SQUAD_VALUE_RANGE.min
+    : hint !== undefined
+      ? hint * (1 - HINTED_SQUAD_TOLERANCE)
+      : config.initialBudget * INITIAL_SQUAD_VALUE_RANGE.min
   const initialSquadHigh = known0
     ? initialSquadValue
-    : config.initialBudget * INITIAL_SQUAD_VALUE_RANGE.max
+    : hint !== undefined
+      ? hint * (1 + HINTED_SQUAD_TOLERANCE)
+      : config.initialBudget * INITIAL_SQUAD_VALUE_RANGE.max
   if (!known0) {
-    unknowns.push('no se conoce el valor exacto de la plantilla repartida al empezar')
+    unknowns.push(
+      hint !== undefined
+        ? 'la plantilla inicial del rival se supone parecida a la propia, no es dato'
+        : 'no se conoce el valor exacto de la plantilla repartida al empezar',
+    )
   }
 
   const components: BalanceComponents = {
@@ -167,6 +215,9 @@ export function reconstructBalance(
     bonuses: ledger.jornadaRanks
       ? bonusesFromRanks(ledger.jornadaRanks, config)
       : sumBy(txs, (t) => t.type === 'bonus'),
+    // El saldo inicial acreditado por Mister no se suma aqui: ya esta contado
+    // en initialCash. Sumarlo otra vez duplicaria los doce millones y medio
+    // con los que arranca cada manager.
     other: sumBy(txs, (t) => t.type === 'salary' || t.type === 'quiniela' || t.type === 'unknown'),
   }
 

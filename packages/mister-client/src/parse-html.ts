@@ -396,15 +396,17 @@ export function movementsToTransactions(
 
     const { playerName, counterpartyName } = parseReason(stripTags(m.reason ?? ''))
 
+    const amount = m.sign === '+' ? magnitude : -magnitude
+
     out.push({
       date: isoFromMovement(m),
-      type: parseTransactionType(m.type ?? ''),
+      type: refineBonus(parseTransactionType(m.type ?? ''), amount),
       // Mister marca las ENTRADAS con "+" y las salidas con una cadena VACIA,
       // no con "-". Comparar contra "-" no acertaba nunca y todas las compras
       // se guardaban en positivo, lo que inflaba el saldo reconstruido en
       // decenas de millones. La regla correcta es: positivo si y solo si
       // el signo es "+".
-      amount: m.sign === '+' ? magnitude : -magnitude,
+      amount,
       managerId,
       counterpartyId: counterpartyName ? resolveManager?.(counterpartyName) : undefined,
       playerName,
@@ -413,6 +415,31 @@ export function movementsToTransactions(
   }
 
   return out
+}
+
+/**
+ * Mister mete tres cosas distintas bajo la misma etiqueta "Bonificacion", y
+ * confundirlas descuadra la reconstruccion de saldos. Se distinguen por el
+ * importe, que las reglas de la liga acotan:
+ *
+ *  - La bonificacion de jornada va de 1,00M a 1,50M segun el puesto.
+ *  - La quiniela paga 25.000 por acierto, con 10 partidos: hasta 250.000.
+ *  - El saldo inicial que Mister acredita al repartir la plantilla es de
+ *    varios millones y ocurre una sola vez, antes de la primera jornada.
+ *
+ * Contra la cuenta real: 12.472.000 al empezar, luego pares como
+ * 1.200.000 + 100.000 y 1.050.000 + 150.000, que son jornada y quiniela de
+ * esa misma jornada. Cuatro y seis aciertos.
+ */
+const MAX_JORNADA_PAYOUT = 2_000_000
+const MAX_QUINIELA_PAYOUT = 250_000
+const QUINIELA_PER_HIT = 25_000
+
+export function refineBonus(type: TransactionType, amount: number): TransactionType {
+  if (type !== 'bonus' || amount <= 0) return type
+  if (amount > MAX_JORNADA_PAYOUT) return 'seed'
+  if (amount <= MAX_QUINIELA_PAYOUT && amount % QUINIELA_PER_HIT === 0) return 'quiniela'
+  return 'bonus'
 }
 
 function isoFromMovement(m: { ts?: number; adate?: string }): string {

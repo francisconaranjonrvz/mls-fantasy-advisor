@@ -92,6 +92,7 @@ export type TransactionType =
   | 'loan_purchase'
   | 'loan_sale'
   | 'bonus'            // bonificacion de jornada
+  | 'seed'             // el saldo que Mister te acredita al repartir la plantilla
   | 'clause_change'    // subir/bajar cláusula ("Penalización" en el feed)
   | 'salary'
   | 'quiniela'

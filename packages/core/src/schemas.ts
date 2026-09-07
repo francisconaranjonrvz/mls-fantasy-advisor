@@ -56,7 +56,7 @@ export const transactionSchema = z.object({
   date: z.string(),
   type: z.enum([
     'purchase', 'sale', 'buyout_signing', 'buyout_sale',
-    'loan_purchase', 'loan_sale', 'bonus', 'clause_change',
+    'loan_purchase', 'loan_sale', 'bonus', 'seed', 'clause_change',
     'salary', 'quiniela', 'unknown',
   ]),
   amount: z.number().int(),

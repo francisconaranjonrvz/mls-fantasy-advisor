@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parsePlayerRows, parseMarket, parseStandingsMembers, parseBalanceHistory,
   parseReason, parseTransactionType, parseMisterDate, parseCurrentJornada,
-  toTransactions, movementsToTransactions, stripTags,
+  toTransactions, movementsToTransactions, stripTags, refineBonus,
 } from './parse-html.ts'
 import { extractXAuth, extractLeagueId } from './auth.ts'
 import {
@@ -347,5 +347,48 @@ describe('el signo de los movimientos, tal como lo codifica Mister', () => {
     for (const t of reales) {
       expect(movementsToTransactions([mov(t, '')], 1)[0]!.type).not.toBe('unknown')
     }
+  })
+})
+
+describe('las tres cosas que Mister llama "Bonificacion"', () => {
+  /**
+   * Los importes son los de la cuenta real, no inventados. Es importante:
+   * la regla que los separa se apoya en las cotas del reglamento, y solo se
+   * puede confiar en ella si casa con lo que el servidor manda de verdad.
+   */
+  it('el apunte de varios millones del principio es el saldo inicial', () => {
+    expect(refineBonus('bonus', 12_472_000)).toBe('seed')
+  })
+
+  it('los importes de 1,0M a 1,5M son la bonificacion de jornada', () => {
+    expect(refineBonus('bonus', 1_200_000)).toBe('bonus')
+    expect(refineBonus('bonus', 1_050_000)).toBe('bonus')
+  })
+
+  it('los multiplos pequenos de 25.000 son la quiniela', () => {
+    // 100.000 son cuatro aciertos; 150.000, seis.
+    expect(refineBonus('bonus', 100_000)).toBe('quiniela')
+    expect(refineBonus('bonus', 150_000)).toBe('quiniela')
+  })
+
+  it('no toca lo que no es una bonificacion', () => {
+    expect(refineBonus('purchase', 100_000)).toBe('purchase')
+    expect(refineBonus('sale', 12_472_000)).toBe('sale')
+  })
+
+  it('un cargo negativo no puede ser ninguna de las tres', () => {
+    expect(refineBonus('bonus', -100_000)).toBe('bonus')
+  })
+
+  it('clasifica una jornada completa tal cual llega del servidor', () => {
+    const txs = movementsToTransactions(
+      [
+        { ts: 1755439994, type: 'Bonificacion', sign: '+', amount: 12_472_000, balance: 12_472_000 },
+        { ts: 1756115983, type: 'Bonificacion', sign: '+', amount: 1_200_000, balance: 13_672_000 },
+        { ts: 1756116009, type: 'Bonificacion', sign: '+', amount: 100_000, balance: 13_772_000 },
+      ],
+      1,
+    )
+    expect(txs.map((t) => t.type)).toEqual(['seed', 'bonus', 'quiniela'])
   })
 })

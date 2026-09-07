@@ -5,7 +5,7 @@ import {
 import {
   buildValuationContext, reconstructBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
-  optimizeLineup, bestSubstitution, auditHistory, marketBenchmark,
+  optimizeLineup, bestSubstitution, auditHistory, marketBenchmark, observedInitialCash,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
   type Calibration, type HistoryAudit,
 } from '@mls/engine'
@@ -137,9 +137,29 @@ export function analyze(
   now = new Date(),
   baseline?: SeasonBaseline | null,
 ): Diagnosis {
-  const initialSquadValue = (id: number): Euros | undefined =>
-    baseline?.initialSquadValueByManager?.[String(id)]
   const config = MLS_LEAGUE
+
+  /**
+   * Caja inicial observada en el libro propio.
+   *
+   * Mister no reparte 50M de saldo: reparte plantilla y acredita el resto en
+   * un apunte unico antes de la primera jornada. En la cuenta real fueron
+   * 12,47M, o sea una plantilla inicial de 37,53M. El modelo suponia 25M de
+   * caja, asi que arrastraba un sesgo de doce millones y medio en el saldo
+   * estimado de CADA rival.
+   */
+  const cajaInicialPropia = observedInitialCash(transactions)
+  const plantillaInicialPropia =
+    cajaInicialPropia !== null ? config.initialBudget - cajaInicialPropia : undefined
+
+  const initialSquadValue = (id: number): Euros | undefined => {
+    const declarado = baseline?.initialSquadValueByManager?.[String(id)]
+    if (declarado !== undefined) return declarado
+    // Para uno mismo es dato exacto. Para los rivales seria una suposicion, y
+    // como suposicion no entra aqui: entra como centro del intervalo, mas
+    // abajo, para que siga habiendo intervalo.
+    return id === snapshot.selfId ? plantillaInicialPropia : undefined
+  }
   const valuation = buildValuationContext(
     snapshot.players.length > 0
       ? snapshot.players
@@ -180,6 +200,9 @@ export function analyze(
       {
         managerId: m.id,
         initialSquadValue: initialSquadValue(m.id),
+        // Sin baseline declarado, se le supone el reparto que se observo en la
+        // cuenta propia. Es una suposicion y el intervalo lo dice.
+        initialSquadValueHint: plantillaInicialPropia,
         transactions: txs,
         // El feed publica los traspasos pero no las bonificaciones ni las
         // modificaciones de clausula, asi que el historial rival nunca es
@@ -301,12 +324,21 @@ export function analyze(
       }))
     : []
 
-  if (!baseline) {
+  if (!baseline && plantillaInicialPropia === undefined) {
     warnings = [
       ...warnings,
       'falta data/<temporada>/baseline.json con el valor de la plantilla inicial de cada ' +
-        'manager: sin el, los saldos estimados arrastran un sesgo constante (lo cuantifica ' +
-        'la calibracion)',
+        'manager, y el libro propio tampoco trae el apunte de saldo inicial: sin ninguna de las ' +
+        'dos cosas, los saldos estimados arrastran un sesgo constante (lo cuantifica la ' +
+        'calibracion)',
+    ]
+  } else if (!baseline) {
+    warnings = [
+      ...warnings,
+      `sin baseline.json, a cada rival se le supone la plantilla inicial que se observo en la ` +
+        `cuenta propia (${Math.round((plantillaInicialPropia ?? 0) / 100_000) / 10}M) con un ` +
+        'margen del 20%; es una suposicion razonable porque el reparto es el mismo para todos, ' +
+        'pero sigue siendo una suposicion',
     ]
   }
 
