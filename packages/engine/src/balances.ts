@@ -91,6 +91,16 @@ export interface ManagerLedger {
    */
   initialSquadValueHint?: Euros | undefined
   /**
+   * Margen de esa estimacion, en euros.
+   *
+   * Los jugadores que un manager conserva del reparto se valoran a precio de
+   * HOY, porque el del dia del reparto no se publica. Tres semanas de mercado
+   * mueven ese precio, asi que la estimacion arrastra ese error y hay que
+   * declararlo en vez de presentarla como exacta. Si no se da, se usa el margen
+   * generico de la configuracion de la liga.
+   */
+  initialSquadUncertainty?: Euros | undefined
+  /**
    * Cota superior de lo que pudo gastar en subir clausulas, si se conoce.
    *
    * El feed no publica las modificaciones de clausula de los rivales, asi que
@@ -248,7 +258,8 @@ export function reconstructBalance(
   // porque incluye el redondeo real de esta liga, y si no, la regla.
   const porRegla = config.initialBudget * config.initialSquadPctOfBudget
   const centro = ledger.initialSquadValueHint ?? porRegla
-  const margen = config.initialBudget * config.initialSquadTolerance
+  const margen = ledger.initialSquadUncertainty
+    ?? config.initialBudget * config.initialSquadTolerance
 
   const initialSquadValue = ledger.initialSquadValue ?? centro
   const initialSquadLow = known0 ? initialSquadValue : centro - margen

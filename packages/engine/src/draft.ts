@@ -42,7 +42,23 @@ export interface DraftEstimate {
    */
   fromRetainedValue: Euros
   fromSalePrices: Euros
+  /**
+   * Cuanto puede estar equivocada la cifra.
+   *
+   * Solo la parte de los jugadores conservados: esos se valoran a precio de
+   * hoy y el mercado lleva tres semanas moviendose. Lo que vendio se cuenta al
+   * precio real de venta, que es dato exacto y no aporta error.
+   */
+  uncertainty: Euros
 }
+
+/**
+ * Cuanto puede haberse movido el valor de un jugador desde el reparto.
+ *
+ * Mister revaloriza a diario segun la demanda. Un 15% cubre holgadamente tres
+ * semanas sin fingir que el precio de hoy es el de entonces.
+ */
+export const MARKET_DRIFT = 0.15
 
 const COMPRAS = new Set(['purchase', 'buyout_signing'])
 const VENTAS = new Set(['sale', 'buyout_sale'])
@@ -89,6 +105,7 @@ export function estimateDraft(
     sold: vendidosDelReparto.length,
     fromRetainedValue,
     fromSalePrices,
+    uncertainty: Math.round(fromRetainedValue * MARKET_DRIFT),
   }
 }
 

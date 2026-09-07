@@ -268,6 +268,7 @@ export function analyze(
         minClauseSpend: minClauseSpendForSquad(m.squad),
         initialSquadValue: initialSquadValue(m.id),
         initialSquadValueHint: config.initialBudget - cajaInicial,
+        initialSquadUncertainty: reparto.uncertainty,
         transactions: txs,
         // Con /ajax/feed paginado hasta el principio de temporada, el libro
         // rival deja de estar cortado: trae traspasos, quiniela, cambios de
