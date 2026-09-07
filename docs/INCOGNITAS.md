@@ -3,24 +3,19 @@
 Ninguna bloquea el desarrollo. Todas afectan a la precision del modelo economico y estan
 parametrizadas en `packages/core/src/league.ts`, de modo que se cambian en un unico sitio.
 
-## 1. Salarios (impacto ALTO)
+## 1. Salarios (RESUELTO: estan desactivados)
 
-Las capturas de ajustes dicen `Cobrar salarios por jugadores: No`, pero conviven con
+Las capturas de ajustes decian `Cobrar salarios por jugadores: No`, pero convivian con
 `El pago de salarios se ejecuta sobre: el valor de la alineacion`, `Cobrar un 1% sobre el
-valor de equipo` y `Ejecutar pago de salarios: al finalizar cada jornada`.
+valor de equipo` y `Ejecutar pago de salarios: al finalizar cada jornada`, asi que no
+quedaba claro cual mandaba.
 
-La documentacion oficial describe "Cobrar Salarios" como el interruptor maestro que activa
-o desactiva el sistema entero, lo que implica que los otros tres campos estan inertes.
+**Lo dice el libro de movimientos, y de dos formas independientes.** En 54 apuntes que
+cubren cuatro jornadas no hay ni un solo cargo de salario. Y, mas concluyente: la
+auditoria del libro contra su propio saldo resultante cuadra al centimo en los 54. Si
+hubiera un cargo de ~900.000 por jornada sin modelar, no cuadraria.
 
-Por que importa: con un once de unos 90M, el 1% son unos 900.000 por jornada, frente a una
-bonificacion de 1,0 a 1,5M. Es decir, entre el 60% y el 90% de la bonificacion. Cambia por
-completo si conviene acumular valor de plantilla o no.
-
-Estado: `salaries.enabled = false`. El reconstructor de saldos evalua ambas ramas y
-ensancha el intervalo de incertidumbre mientras no se confirme.
-
-Como confirmarlo: mirar el feed de balance despues de una jornada y buscar un cargo de
-tipo salario.
+Estado: `salaries.enabled = false`, confirmado contra datos reales.
 
 ## 2. Sirve la deuda del 25% para pagar clausulas? (impacto ALTO)
 
@@ -54,17 +49,21 @@ desplazan con el horario de verano espanol o si se mantienen fijos todo el ano.
 Estado: el workflow de ingesta corre a las 04:20, 05:20, 16:20 y 17:20 UTC y es
 idempotente, de modo que cubre ambas interpretaciones. Correr de mas es gratis.
 
-## 5. Forma exacta del feed de rivales (impacto ALTO)
+## 5. Movimientos de los rivales (RESUELTO)
 
-Esta confirmado que `/feed#balance` renderiza `ul.balance-history` con el libro completo
-de tus movimientos: tipo, contraparte, fecha, importe con signo y saldo resultante.
+El libro propio NO esta en el HTML de `/feed`, como sugeria la documentacion de la
+comunidad: viene en el JSON de `/ajax/sw/balance`, junto al saldo, con el importe sin
+formatear y la marca de tiempo. Mejor fuente que raspar marcado.
 
-Falta confirmar la peticion exacta que devuelve el feed de actividad con los movimientos
-de los rivales y sus importes. Se resuelve en dos minutos abriendo DevTools en `/feed` y
-mirando la peticion XHR.
+Los movimientos de los rivales salen del feed de actividad, de las tarjetas
+`.card-transfer`. Ahi no hay etiqueta que diga quien entrega y quien recibe: se deduce del
+orden en que aparecen los dos managers. Como una inversion de ese criterio pondria del
+reves el saldo de los diez rivales sin dar ningun sintoma, la ingesta lo **contrasta en
+cada ejecucion** contra el libro propio, que si es autoritativo, usando los traspasos que
+aparecen en ambos sitios. Ultima ejecucion: 7 coinciden, 0 discrepan.
 
-Estado: el cliente implementa el parseo del feed propio, ya verificado. El de rivales se
-anade en cuanto se confirme la forma de la peticion.
+Lo que el feed sigue sin publicar son las bonificaciones y las modificaciones de clausula
+de los rivales, asi que su historial nunca es completo y el intervalo lo refleja.
 
 ## 6. Bonificacion por punto (impacto MEDIO)
 
@@ -110,7 +109,23 @@ evidencia disponible es mas floja de lo que parece a primera vista.
 no remoto. El sistema esta preparado: detecta la sesion muerta y dice
 exactamente que hacer.
 
-## 8. Como saber si tu cuenta admite contrasena (resuelto)
+## 8. Que jornada es (parcialmente resuelto)
+
+El rotulo de la pagina y los datos no dicen lo mismo. La pagina pone "JORNADA 4"; los
+jugadores, con `puntos / media`, dicen que se han disputado 4. Es decir, el rotulo se
+refiere a la jornada en curso y no a las cerradas.
+
+Se resuelve deduciendolo de los datos, que es la fuente mas fiable de las dos, y avisando
+cuando discrepan en vez de elegir en silencio. Importa porque de esa cifra cuelgan todas
+las medias por jornada y la proyeccion de lo que queda de temporada, y equivocarse en una
+jornada de cuatro es un error del 25%.
+
+Queda un cabo suelto: `/ajax/sw/progression` lista las jornadas puntuadas como
+`J2, J3, J4, J6`. Faltan la primera y la quinta y aparece una sexta. Si esa numeracion es
+la de LaLiga y no la de la liga privada, quedan 32 jornadas por jugar y no 34, y la
+proyeccion esta un 6% alta.
+
+## 9. Como saber si tu cuenta admite contrasena (resuelto)
 
 Mister expone un endpoint **publico y sin autenticacion** que dice que metodos
 de acceso admite una cuenta. Comprobado contra produccion:

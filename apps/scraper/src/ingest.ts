@@ -8,7 +8,7 @@ import { MLS_LEAGUE, parseEuros, POSITION_BY_CODE } from '@mls/core'
 import type {
   LeagueSnapshot, Manager, Player, PlayerStatus, Transaction, MarketEntry,
 } from '@mls/core'
-import type { BalanceInfo, RawPlayerRecord } from '@mls/mister-client'
+import type { BalanceInfo, RawPlayerRecord, LeagueProgression } from '@mls/mister-client'
 import type { ScraperConfig } from './config.ts'
 
 /**
@@ -34,6 +34,8 @@ export interface IngestResult {
   /** Movimientos de rivales deducidos del feed. Sin fecha exacta ni saldo. */
   rivalTransactions: Transaction[]
   balance: BalanceInfo | null
+  /** Puesto de cada manager en cada jornada cerrada. Da bonificaciones exactas. */
+  progression: LeagueProgression
   warnings: string[]
   enrichedCount: number
 }
@@ -129,6 +131,20 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     log(`saldo leido (${redacted(b.balance)}), ${b.history.length} movimientos`)
   } catch (err) {
     warn(`no se pudo leer el saldo: ${String(err)}`)
+  }
+
+  // Puesto de cada manager en cada jornada cerrada. De aqui salen las
+  // bonificaciones exactas, tambien las de los rivales, que hasta ahora eran
+  // el termino que mas ensanchaba su intervalo de saldo.
+  let progression: LeagueProgression = { jornadas: [], managers: [] }
+  try {
+    progression = await api.getProgression()
+    log(
+      `progresion: ${progression.jornadas.length} jornadas puntuadas ` +
+        `(${progression.jornadas.map((j) => `J${j}`).join(', ')})`,
+    )
+  } catch (err) {
+    warn(`no se pudo leer la progresion: ${String(err)}`)
   }
 
   const members = parseStandingsMembers(await api.getStandingsHtml())
@@ -323,6 +339,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     transactions,
     rivalTransactions,
     balance,
+    progression,
     warnings,
     enrichedCount,
   }

@@ -163,6 +163,19 @@ export function buildDemoSnapshot(): DemoData {
     transactions,
     rivalTransactions,
     balance: { balance: saldo, future: saldo, maxDebt: saldo + M(30), history: [] },
+    // Progresion sintetica: diez jornadas cerradas y un puesto por manager en
+    // cada una, para que la demo ejercite tambien las bonificaciones exactas.
+    progression: {
+      jornadas: Array.from({ length: 10 }, (_, i) => i + 1),
+      managers: managers.map((m, idx) => ({
+        managerId: m.id,
+        name: m.name,
+        ranks: Array.from({ length: 10 }, (_, j) => ({
+          jornada: j + 1,
+          rank: ((idx + j) % managers.length) + 1,
+        })),
+      })),
+    },
     warnings: ['datos sinteticos de demostracion: no reflejan la liga real'],
     enrichedCount: players.length,
     baseline: {

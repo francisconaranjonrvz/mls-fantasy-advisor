@@ -232,7 +232,11 @@ export function reconstructBalance(
     components.bonuses +
     components.other
 
-  const jornadasPlayed = ledger.jornadaRanks?.length ?? 0
+  // Cuantas jornadas se han jugado, para acotar quiniela y salarios. Los
+  // puestos son la mejor fuente, pero si no los hay valen las jornadas en las
+  // que puntuo: antes, sin puestos, esto salia cero y el intervalo se
+  // estrechaba fingiendo que no habia habido temporada.
+  const jornadasPlayed = ledger.jornadaRanks?.length ?? ledger.scoredJornadas?.length ?? 0
 
   const [qLow, qHigh] = quinielaRange(jornadasPlayed, config)
   if (qHigh > 0) unknowns.push('los aciertos de quiniela no son observables')
@@ -251,19 +255,27 @@ export function reconstructBalance(
   let high = known + qHigh + sHigh + (config.initialBudget - initialSquadLow) - components.initialCash
 
   if (!ledger.historyComplete) {
-    unknowns.push(
-      'el historial no incluye bonificaciones ni modificaciones de clausula, que el feed no publica',
-    )
     // Lo que falta no es "todo": son las bonificaciones de jornada y las
     // modificaciones de clausula. Ambas estan ACOTADAS por las reglas de la
     // liga, asi que el margen se calcula en vez de inventarse.
-    const jornadas = Math.max(1, jornadasPlayed)
-    const bonusMax = Math.max(...config.jornadaRankBonus) * jornadas
-    const bonusMin = Math.min(...config.jornadaRankBonus) * jornadas
+    //
+    // Y si se conoce el puesto de cada jornada, la bonificacion deja de faltar:
+    // ya esta contada, exacta, en components.bonuses. Volver a sumarla como
+    // rango seria contarla dos veces y ensanchar el intervalo sin motivo.
+    if (ledger.jornadaRanks) {
+      unknowns.push(
+        'el historial no incluye las modificaciones de clausula, que el feed no publica',
+      )
+    } else {
+      unknowns.push(
+        'el historial no incluye bonificaciones ni modificaciones de clausula, que el feed no publica',
+      )
+      const jornadas = Math.max(1, jornadasPlayed)
+      low += Math.min(...config.jornadaRankBonus) * jornadas
+      high += Math.max(...config.jornadaRankBonus) * jornadas
+    }
     // Nadie puede haber gastado en clausulas mas que el valor de su plantilla.
-    const clausulasMax = Math.round(ledger.teamValue * 0.4)
-    low += bonusMin - clausulasMax
-    high += bonusMax
+    low -= Math.round(ledger.teamValue * 0.4)
   }
 
   const constraintsApplied: string[] = []

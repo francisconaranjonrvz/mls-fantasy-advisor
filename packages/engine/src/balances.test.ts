@@ -231,7 +231,40 @@ describe('intervalos acotados por las reglas, no a bulto', () => {
 
   it('explica que le falta al historial en vez de decir que no lo tiene', () => {
     const e = reconstructBalance(rival, MLS_LEAGUE)
+    expect(e.unknowns.join(' ')).toMatch(/modificaciones de clausula/)
+  })
+
+  it('sin los puestos por jornada, las bonificaciones vuelven a ser un rango', () => {
+    const sinPuestos = { ...rival, jornadaRanks: undefined }
+    const e = reconstructBalance(sinPuestos, MLS_LEAGUE)
     expect(e.unknowns.join(' ')).toMatch(/bonificaciones/)
+  })
+
+  it('conocer el puesto de cada jornada estrecha el intervalo', () => {
+    /**
+     * Es la mejora que trae /ajax/sw/progression. La bonificacion depende solo
+     * del puesto, asi que con el puesto deja de ser un rango de 1,0M a 1,5M por
+     * jornada y pasa a ser una cifra exacta, tambien para los rivales.
+     */
+    const conPuestos = reconstructBalance(rival, MLS_LEAGUE)
+    const sinPuestos = reconstructBalance({ ...rival, jornadaRanks: undefined }, MLS_LEAGUE)
+    expect(conPuestos.high - conPuestos.low).toBeLessThan(sinPuestos.high - sinPuestos.low)
+  })
+
+  it('no cuenta dos veces la bonificacion cuando se conoce el puesto', () => {
+    /**
+     * Si se sumara el rango ademas de la cifra exacta, conocer los puestos no
+     * estrecharia nada y las dos anchuras serian iguales. Y el ahorro no puede
+     * pasar de lo que ocupa ese rango: cuatro jornadas de 1,0 a 1,5M, o sea
+     * 2M. Puede quedarse corto porque otras restricciones ya recortan el
+     * intervalo por abajo, y por eso se comprueba la cota y no la igualdad.
+     */
+    const conPuestos = reconstructBalance(rival, MLS_LEAGUE)
+    const sinPuestos = reconstructBalance({ ...rival, jornadaRanks: undefined }, MLS_LEAGUE)
+    const ahorro = (sinPuestos.high - sinPuestos.low) - (conPuestos.high - conPuestos.low)
+    const rango = MLS_LEAGUE.jornadaRankBonus
+    expect(ahorro).toBeGreaterThan(0)
+    expect(ahorro).toBeLessThanOrEqual((Math.max(...rango) - Math.min(...rango)) * 4)
   })
 
   it('conocer la plantilla inicial estrecha el intervalo', () => {

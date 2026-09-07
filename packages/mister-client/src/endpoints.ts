@@ -241,12 +241,19 @@ export class MisterEndpoints {
     return res.data ?? {}
   }
 
-  /** Progresion de la clasificacion jornada a jornada. */
-  async getProgression(): Promise<unknown> {
-    const res = await this.http.postForm<AjaxEnvelope<unknown>>('/ajax/sw/progression', {
+  /**
+   * Puesto de cada manager en cada jornada cerrada.
+   *
+   * Es el dato que convierte las bonificaciones de jornada de estimacion en
+   * cifra exacta, tambien para los rivales: la bonificacion depende solo del
+   * puesto, y el puesto esta aqui. Sin esto, cada jornada anadia entre 1,0M y
+   * 1,5M de incertidumbre al saldo estimado de los nueve rivales.
+   */
+  async getProgression(): Promise<LeagueProgression> {
+    const res = await this.http.postForm<AjaxEnvelope<RawProgression>>('/ajax/sw/progression', {
       post: 'progression',
     })
-    return res.data
+    return normalizeProgression(res.data)
   }
 
   /** Clausula, precio de compra y ofertas de un jugador concreto. */
@@ -288,6 +295,58 @@ export class MisterEndpoints {
   getFeedHtml(): Promise<string> {
     return this.http.fetchPage('/feed')
   }
+}
+
+/**
+ * Progresion tal cual la sirve Mister.
+ *
+ * `gameweeks` son etiquetas ("J2", "J3", "J4", "J6"), y el hueco entre ellas es
+ * informacion: en esta liga la primera y la quinta no se puntuaron. Cada
+ * manager trae un mapa de numero de jornada a puesto.
+ */
+interface RawProgression {
+  progression?: {
+    gameweeks?: unknown[]
+    users?: {
+      user?: { id_uc?: number | string; name?: string }
+      progression?: Record<string, number | string>
+    }[]
+  }
+}
+
+export interface ManagerProgression {
+  managerId: number
+  name: string
+  /** Puesto en cada jornada cerrada. 1 es el mejor. */
+  ranks: { jornada: number; rank: number }[]
+}
+
+export interface LeagueProgression {
+  /** Numeros de jornada que se han puntuado, en orden. */
+  jornadas: number[]
+  managers: ManagerProgression[]
+}
+
+export function normalizeProgression(raw: RawProgression | undefined): LeagueProgression {
+  const p = raw?.progression
+  const jornadas = (p?.gameweeks ?? [])
+    // Vienen como "J6"; nos quedamos con el numero.
+    .map((g) => Number.parseInt(String(g).replace(/\D/g, ''), 10))
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => a - b)
+
+  const managers: ManagerProgression[] = []
+  for (const u of p?.users ?? []) {
+    const managerId = Number(u.user?.id_uc)
+    if (!Number.isFinite(managerId) || managerId <= 0) continue
+    const ranks = Object.entries(u.progression ?? {})
+      .map(([j, r]) => ({ jornada: Number.parseInt(j, 10), rank: Math.round(Number(r)) }))
+      .filter((x) => Number.isFinite(x.jornada) && Number.isFinite(x.rank) && x.rank > 0)
+      .sort((a, b) => a.jornada - b.jornada)
+    managers.push({ managerId, name: String(u.user?.name ?? ''), ranks })
+  }
+
+  return { jornadas, managers }
 }
 
 /**

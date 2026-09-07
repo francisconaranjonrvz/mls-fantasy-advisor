@@ -1,3 +1,4 @@
+import type { LeagueProgression } from '@mls/mister-client'
 import {
   MLS_LEAGUE, MLS_CONTRACT,
   type LeagueSnapshot, type Transaction, type Euros, type Player,
@@ -136,6 +137,7 @@ export function analyze(
   warnings: string[],
   now = new Date(),
   baseline?: SeasonBaseline | null,
+  progression?: LeagueProgression | null,
 ): Diagnosis {
   const config = MLS_LEAGUE
 
@@ -166,6 +168,7 @@ export function analyze(
       : snapshot.managers.flatMap((m) => m.squad),
     Math.max(0, snapshot.currentJornada - 1),
     MLS_CONTRACT.totalJornadas,
+    progression?.jornadas,
   )
 
   // Las jornadas disputadas salen de los datos, no del rotulo de la pagina.
@@ -173,6 +176,11 @@ export function analyze(
   // medias y todo el calculo del bote.
   const jornadasPlayed = valuation.jornadasPlayed
   const segunLaPagina = Math.max(0, snapshot.currentJornada - 1)
+
+  // Puestos por jornada, indexados por manager.
+  const ranksByManager = new Map(
+    (progression?.managers ?? []).map((m) => [m.managerId, m.ranks]),
+  )
   if (snapshot.players.length > 0 && jornadasPlayed !== segunLaPagina) {
     warnings = [
       ...warnings,
@@ -199,6 +207,9 @@ export function analyze(
     const balance = reconstructBalance(
       {
         managerId: m.id,
+        // Con el puesto de cada jornada, la bonificacion deja de ser un rango
+        // de 1,0M a 1,5M por jornada y pasa a ser una cifra exacta.
+        jornadaRanks: ranksByManager.get(m.id),
         initialSquadValue: initialSquadValue(m.id),
         // Sin baseline declarado, se le supone el reparto que se observo en la
         // cuenta propia. Es una suposicion y el intervalo lo dice.

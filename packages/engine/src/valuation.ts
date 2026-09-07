@@ -206,14 +206,31 @@ export function buildValuationContext(
   players: Player[],
   jornadasHint: number,
   totalJornadas: number,
+  /**
+   * Numeros de jornada ya puntuados, si se conocen.
+   *
+   * En esta liga son J2, J3, J4 y J6: cuatro puntuadas, pero seis consumidas
+   * del calendario. Son dos cifras distintas y las dos hacen falta. Los puntos
+   * por jornada se dividen entre las CUATRO en las que se puntuo; lo que queda
+   * por jugar se cuenta desde la SEXTA. Usar 38 menos cuatro daria treinta y
+   * cuatro jornadas por delante cuando en realidad quedan treinta y dos, y
+   * toda la proyeccion saldria un 6% alta.
+   */
+  scoredJornadas?: number[],
 ): ValuationContext {
   const derived = deriveJornadasPlayed(players, totalJornadas)
-  const jornadasPlayed = Math.min(totalJornadas, Math.max(0, derived ?? jornadasHint))
+  const jornadasPlayed =
+    scoredJornadas && scoredJornadas.length > 0
+      ? scoredJornadas.length
+      : Math.min(totalJornadas, Math.max(0, derived ?? jornadasHint))
+
+  const ultimaDelCalendario =
+    scoredJornadas && scoredJornadas.length > 0 ? Math.max(...scoredJornadas) : jornadasPlayed
 
   const ctx: ValuationContext = {
     pricePerPoint: 0,
     jornadasPlayed,
-    jornadasRemaining: Math.max(0, totalJornadas - jornadasPlayed),
+    jornadasRemaining: Math.max(0, totalJornadas - ultimaDelCalendario),
     positionMean: derivePositionMeans(players, jornadasPlayed),
   }
   // El precio del punto depende de la proyeccion, asi que se calcula cuando ya
