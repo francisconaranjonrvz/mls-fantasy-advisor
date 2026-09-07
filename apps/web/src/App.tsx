@@ -168,6 +168,19 @@ export function App() {
 
       <section>
         <h2>Clausulazos recomendados</h2>
+        <p className="note">
+          {data.market?.bestCostPerPoint !== null && data.market !== undefined ? (
+            <>
+              El listón: hoy el punto más barato del mercado abierto es{' '}
+              <b>{data.market.playerName}</b> a {fmt(data.market.price ?? 0)}, o sea{' '}
+              <b>{fmt(Math.round(data.market.bestCostPerPoint!))} por punto</b>. Un clausulazo
+              solo compensa si baja de esa cifra.
+            </>
+          ) : (
+            <>El mercado abierto no ofrece hoy nada que mejore tu once, así que no hay
+            alternativa con la que comparar un clausulazo.</>
+          )}
+        </p>
         {data.raids.length === 0 ? (
           <p className="empty">Hoy no hay ningún robo que salga a cuenta con tu capacidad actual.</p>
         ) : (
@@ -179,9 +192,9 @@ export function App() {
                     <th>Jugador</th>
                     <th>Dueño</th>
                     <th className="num">Cláusula</th>
-                    <th className="num">Vale</th>
-                    <th className="num">Beneficio</th>
-                    <th className="num">Retorno</th>
+                    <th className="num">Puntos que ganas</th>
+                    <th className="num">Coste por punto</th>
+                    <th>A quién sienta</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -190,9 +203,9 @@ export function App() {
                       <td>{r.player.name}</td>
                       <td>{r.ownerName}</td>
                       <td className="num">{fmt(r.clause)}</td>
-                      <td className="num">{fmt(r.sportingValue)}</td>
-                      <td className="num"><b>{fmt(r.profit)}</b></td>
-                      <td className="num">{(r.roi * 100).toFixed(0)}%</td>
+                      <td className="num"><b>{r.gain.remaining.toFixed(0)}</b></td>
+                      <td className="num">{fmt(Math.round(r.costPerPoint))}</td>
+                      <td>{r.gain.displaces?.name ?? 'hueco libre'}</td>
                     </tr>
                   ))}
                 </tbody>

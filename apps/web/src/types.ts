@@ -48,6 +48,27 @@ export interface Raid {
   sportingValue: number
   profit: number
   roi: number
+  /** Euros por cada punto que el fichaje suma a tu once. */
+  costPerPoint: number
+  gain: {
+    perJornada: number
+    remaining: number
+    displaces?: { id: number; name: string } | null
+    entersLineup: boolean
+  }
+}
+
+export interface Market {
+  bestCostPerPoint: number | null
+  playerName: string | null
+  price: number | null
+}
+
+export interface Valuation {
+  jornadasPlayed: number
+  jornadasRemaining: number
+  pricePerPoint: number
+  positionMean: Record<string, number>
 }
 
 export interface Diagnosis {
@@ -76,6 +97,8 @@ export interface Diagnosis {
   protection: { plan: Threat[]; totalCost: number; remaining: number }
   raids: Raid[]
   raidPlan: { plan: Raid[]; totalCost: number; remainingCapacity: number }
+  market: Market
+  valuation: Valuation
   deadweight: { playerId: number; name: string; value: number; reason: string }[]
   lineup: {
     formation: string

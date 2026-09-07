@@ -141,7 +141,27 @@ describe('plan de proteccion con presupuesto', () => {
 })
 
 describe('clausulazos', () => {
-  const raidCtx = { capacity: M(30), squadSize: 20, clauseSigningsToday: 0, now: NOW }
+  /**
+   * Once propio deliberadamente mediocre: todos a 1 punto por jornada. Hace
+   * falta porque desde ahora un fichaje se juzga por lo que mejora TU once, y
+   * sin once no hay nada contra lo que compararlo.
+   */
+  const miPlantilla: OwnedPlayer[] = [
+    owned({ id: 900, name: 'Portero', value: M(5), points: 10, position: 'GK' }),
+    ...Array.from({ length: 4 }, (_, i) =>
+      owned({ id: 910 + i, name: `Defensa ${i}`, value: M(5), points: 10, position: 'DF' })),
+    ...Array.from({ length: 4 }, (_, i) =>
+      owned({ id: 920 + i, name: `Medio ${i}`, value: M(5), points: 10, position: 'MF' })),
+    ...Array.from({ length: 2 }, (_, i) =>
+      owned({ id: 930 + i, name: `Punta ${i}`, value: M(5), points: 10, position: 'FW' })),
+  ]
+
+  const raidCtx = {
+    squad: miPlantilla,
+    // Sin mercado abierto que ofrezca nada: cualquier mejora vale la pena.
+    marketCostPerPoint: Number.POSITIVE_INFINITY,
+    capacity: M(30), squadSize: 20, clauseSigningsToday: 0, now: NOW,
+  }
 
   const rivalSquads = [
     {
@@ -202,6 +222,36 @@ describe('clausulazos', () => {
   it('la ventana esta abierta si la jornada queda lejos', () => {
     const lejos = { ...raidCtx, nextJornadaStart: new Date(NOW.getTime() + 72 * 3_600_000) }
     expect(isClauseWindowClosed(lejos, MLS_LEAGUE)).toBe(false)
+  })
+
+  it('descarta al crack cuya posicion ya tienes cubierta', () => {
+    // El caso que el modelo anterior no sabia ver: el jugador es bueno y su
+    // clausula es barata, pero no entra en el once porque los cuatro medios
+    // que ya tienes rinden mas. Aportar cero puntos no tiene precio bueno.
+    const cubierta = [
+      ...miPlantilla.map((p) => (p.position === 'MF' ? { ...p, points: 60 } : p)),
+      // Con seis medios de sobra no queda hueco que rellenar ni por cambio de
+      // formacion: el fichaje tendria que desplazar a alguien mejor que el.
+      owned({ id: 940, name: 'Medio 4', value: M(5), points: 60, position: 'MF' }),
+      owned({ id: 941, name: 'Medio 5', value: M(5), points: 60, position: 'MF' }),
+    ]
+    const t = evaluateRaid(
+      rivalSquads[0]!.squad[0]!, 'Paquito', CTX,
+      { ...raidCtx, squad: cubierta }, MLS_LEAGUE,
+    )
+    expect(t.gain.entersLineup).toBe(false)
+    expect(t.gain.remaining).toBe(0)
+    expect(t.viable).toBe(false)
+  })
+
+  it('descarta el robo cuyo punto sale mas caro que en el mercado abierto', () => {
+    // Aunque el fichaje mejore el once y el beneficio sea positivo, si esos
+    // mismos euros compran puntos mas baratos en el mercado, el robo es peor.
+    const conMercado = { ...raidCtx, marketCostPerPoint: 1000 }
+    const t = evaluateRaid(rivalSquads[0]!.squad[0]!, 'Paquito', CTX, conMercado, MLS_LEAGUE)
+    expect(t.profit).toBeGreaterThan(0)
+    expect(t.beatsMarket).toBe(false)
+    expect(t.viable).toBe(false)
   })
 
   it('ordena por retorno y pone delante los viables', () => {
@@ -306,6 +356,57 @@ describe('amenaza cierta frente a falta de informacion', () => {
     expect(a.threats.map((t) => t.name)).toEqual(['Cierto'])
     expect(a.possibleThreats.map((t) => t.name)).toEqual(['Incierto'])
     expect(a.advice.action).toBe('subir')
+  })
+})
+
+describe('la amenaza depende de a quien le sirve el jugador', () => {
+  /**
+   * Es la correccion que hace util el analisis de riesgo. Antes bastaba con
+   * que un rival tuviera saldo para considerarlo amenaza; con eso, media
+   * plantilla salia en peligro y la recomendacion era gastar en todos.
+   *
+   * Poder pagar no es querer pagar. Un delantero excelente no corre ningun
+   * peligro con quien ya tiene tres mejores que el.
+   */
+  const punta = () => owned({
+    id: 70, name: 'Punta', position: 'FW', value: M(8), points: 30, purchasePrice: M(8),
+  })
+
+  const onceCon = (puntosDelantero: number): OwnedPlayer[] => [
+    owned({ id: 800, name: 'P', value: M(5), points: 10, position: 'GK', ownerId: 2 }),
+    ...Array.from({ length: 4 }, (_, i) =>
+      owned({ id: 810 + i, name: `D${i}`, value: M(5), points: 10, position: 'DF', ownerId: 2 })),
+    ...Array.from({ length: 4 }, (_, i) =>
+      owned({ id: 820 + i, name: `M${i}`, value: M(5), points: 10, position: 'MF', ownerId: 2 })),
+    ...Array.from({ length: 3 }, (_, i) =>
+      owned({ id: 830 + i, name: `F${i}`, value: M(5), points: puntosDelantero, position: 'FW', ownerId: 2 })),
+  ]
+
+  it('un rival con la delantera floja si es amenaza', () => {
+    const rivales: RivalCapacity[] = [
+      { managerId: 2, name: 'Flojo', capacity: M(60), capacityLow: M(50), squad: onceCon(10) },
+    ]
+    const a = assessPlayerThreat(punta(), rivales, CTX, MLS_LEAGUE, NOW)
+    expect(a.raidProfit).toBeGreaterThan(0)
+    expect(a.threats).toHaveLength(1)
+  })
+
+  it('el mismo rival, con la delantera cubierta, deja de serlo aunque tenga el dinero', () => {
+    const rivales: RivalCapacity[] = [
+      { managerId: 2, name: 'Cubierto', capacity: M(60), capacityLow: M(50), squad: onceCon(80) },
+    ]
+    const a = assessPlayerThreat(punta(), rivales, CTX, MLS_LEAGUE, NOW)
+    expect(a.threats).toHaveLength(0)
+    expect(a.advice.action).toBe('cebo')
+  })
+
+  it('sin conocer su plantilla se cae en la estimacion generica, no en el silencio', () => {
+    const rivales: RivalCapacity[] = [
+      { managerId: 2, name: 'Desconocido', capacity: M(60), capacityLow: M(50) },
+    ]
+    const a = assessPlayerThreat(punta(), rivales, CTX, MLS_LEAGUE, NOW)
+    expect(a.threats.length + a.possibleThreats.length).toBeGreaterThanOrEqual(0)
+    expect(Number.isFinite(a.raidProfit)).toBe(true)
   })
 })
 

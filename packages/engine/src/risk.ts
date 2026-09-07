@@ -4,6 +4,7 @@ import {
   isShielded, CLAUSE_TIER_LABEL, type ClauseTier,
 } from './clauses.ts'
 import { sportingValue, type ValuationContext } from './valuation.ts'
+import { marginalGain } from './marginal.ts'
 
 /**
  * A quien subirle la clausula.
@@ -27,6 +28,15 @@ import { sportingValue, type ValuationContext } from './valuation.ts'
 export interface RivalCapacity {
   managerId: number
   name: string
+  /**
+   * Su plantilla, si se conoce.
+   *
+   * Cambia la pregunta que se hace el motor. Sin ella solo se puede saber si
+   * el jugador es bueno para su precio; con ella se sabe si le SIRVE a ese
+   * rival en concreto, que es lo unico que le hara pagar la clausula. Un
+   * delantero tuyo excelente no corre peligro con quien ya tiene tres mejores.
+   */
+  squad?: OwnedPlayer[] | undefined
   /** Capacidad en su escenario mas rico. Es la cota superior de la amenaza. */
   capacity: Euros
   /**
@@ -89,6 +99,27 @@ function raidProbability(raidProfit: Euros, clause: Euros, threatCount: number):
   return Math.min(0.95, bargain * pressure)
 }
 
+/**
+ * Lo que ganaria un rival concreto robandote a un jugador, en euros.
+ *
+ * Si se conoce su plantilla se mide sobre su once: cuanto mejoraria, valorado
+ * al precio del punto de la liga, menos lo que le cuesta la clausula. Si no se
+ * conoce, se cae en la estimacion generica basada en el precio justo, que es
+ * peor pero no deja al analisis sin respuesta.
+ */
+export function rivalRaidProfit(
+  player: OwnedPlayer,
+  rival: RivalCapacity,
+  clause: Euros,
+  ctx: ValuationContext,
+  config: LeagueConfig,
+  fallback: Euros,
+): Euros {
+  if (!rival.squad || rival.squad.length === 0) return fallback
+  const gain = marginalGain(player, rival.squad, ctx, config)
+  return Math.round(gain.remaining * ctx.pricePerPoint) - clause
+}
+
 export function assessPlayerThreat(
   player: OwnedPlayer,
   rivals: RivalCapacity[],
@@ -99,12 +130,30 @@ export function assessPlayerThreat(
   const base = clauseBase(player)
   const clause = player.clause ?? defaultClause(base, player.value)
   const sv = sportingValue(player, ctx)
-  const raidProfit = sv - clause
   const shielded = isShielded(player, now)
+
+  // Beneficio generico, para los rivales cuya plantilla no se conoce.
+  const genericProfit = sv - clause
+
+  // Cuanto ganaria cada rival. Se calcula una vez porque optimizar el once de
+  // un rival no es gratis y aqui se consulta varias veces.
+  const profitByRival = new Map(
+    rivals.map((r) => [r.managerId, rivalRaidProfit(player, r, clause, ctx, config, genericProfit)]),
+  )
+
+  // El beneficio del robo es el del rival al que mas le compensa. Si a nadie
+  // le compensa, el jugador es cebo por mucho saldo que tengan.
+  const raidProfit = rivals.length > 0
+    ? Math.max(...rivals.map((r) => profitByRival.get(r.managerId) ?? genericProfit))
+    : genericProfit
 
   // Amenaza CIERTA: incluso en su escenario mas pobre el rival puede pagar.
   // Amenaza POSIBLE: solo llega en su escenario mas rico, asi que no sabemos.
-  const canReach = rivals.filter((r) => r.capacity >= clause)
+  //
+  // Y sobre eso, un segundo filtro: poder pagar no es querer pagar. Solo es
+  // amenaza quien ademas saldria ganando, porque nadie roba a perdida.
+  const conIncentivo = rivals.filter((r) => (profitByRival.get(r.managerId) ?? 0) > 0)
+  const canReach = conIncentivo.filter((r) => r.capacity >= clause)
   const threats = canReach
     .filter((r) => (r.capacityLow ?? r.capacity) >= clause)
     .sort((a, b) => b.capacity - a.capacity)
@@ -146,14 +195,18 @@ function adviseProtection(args: {
   expectedLoss: Euros
   config: LeagueConfig
 }): ProtectionAdvice {
-  const { player, base, sportingValue: sv, raidProfit, threats, possibleThreats, shielded, expectedLoss } = args
+  const { player, base, clause, raidProfit, threats, possibleThreats, shielded, expectedLoss } = args
+
+  // Cifra a la que hay que llevar la clausula para que robarlo deje de
+  // compensar: lo que el jugador le vale al rival al que mas le interesa.
+  const neutralizeAt = clause + raidProfit
 
   if (raidProfit <= 0) {
     return {
       action: 'cebo',
       rationale:
-        'Su clausula ya supera lo que va a rendir. Si te lo roban sales ganando: cobras mas de ' +
-        'lo que aporta. Dejalo sin proteger a proposito.',
+        'Su clausula ya supera lo que le aportaria al rival que mas lo querria. Si te lo roban ' +
+        'sales ganando: cobras mas de lo que le vale a el. Dejalo sin proteger a proposito.',
     }
   }
 
@@ -188,13 +241,13 @@ function adviseProtection(args: {
   // Lo que si funciona es quitarle el INCENTIVO. Nadie roba a perdida, asi que
   // basta con dejar la clausula por encima de lo que el jugador va a rendir.
   // Suele costar un tramo y es casi siempre alcanzable.
-  const tierNoIncentive = cheapestTierAbove(base, sv, player.value)
+  const tierNoIncentive = cheapestTierAbove(base, neutralizeAt, player.value)
 
   if (tierNoIncentive !== null) {
     if (tierNoIncentive === 0) {
       return {
         action: 'nada',
-        rationale: 'Su clausula por defecto ya supera lo que va a rendir: robarlo seria mal negocio.',
+        rationale: 'Su clausula por defecto ya supera lo que le aportaria: robarlo seria mal negocio.',
       }
     }
     const cost = tierCost(base, tierNoIncentive)
@@ -215,8 +268,8 @@ function adviseProtection(args: {
       newClause: clauseForTier(base, tierNoIncentive, player.value),
       rationale:
         `Subiendo al tramo ${CLAUSE_TIER_LABEL[tierNoIncentive]} la clausula pasa a superar lo que ` +
-        'el jugador va a rendir, asi que robarlo deja de salirle a cuenta a nadie. No hace falta ' +
-        'ponerlo fuera del alcance de su saldo, que ademas seria mucho mas caro.',
+        'el jugador le aportaria al rival, asi que robarlo deja de salirle a cuenta a nadie. No ' +
+        'hace falta ponerlo fuera del alcance de su saldo, que ademas seria mucho mas caro.',
     }
   }
 

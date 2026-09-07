@@ -1,10 +1,11 @@
 import {
-  MLS_LEAGUE, MLS_CONTRACT, type LeagueSnapshot, type Transaction, type Euros,
+  MLS_LEAGUE, MLS_CONTRACT,
+  type LeagueSnapshot, type Transaction, type Euros, type Player,
 } from '@mls/core'
 import {
   buildValuationContext, reconstructBalance, exactBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
-  optimizeLineup, bestSubstitution, auditHistory,
+  optimizeLineup, bestSubstitution, auditHistory, marketBenchmark,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
   type Calibration, type LineupPlan, type SubstitutionAdvice, type HistoryAudit,
 } from '@mls/engine'
@@ -70,6 +71,27 @@ export interface Diagnosis {
   protection: { plan: ThreatAssessment[]; totalCost: Euros; remaining: Euros }
   raids: RaidTarget[]
   raidPlan: { plan: RaidTarget[]; totalCost: Euros; remainingCapacity: Euros }
+  /**
+   * El liston: lo que cuesta el punto mas barato del mercado abierto.
+   *
+   * Sin esta cifra, "este fichaje te da 12 puntos por 20M" no significa nada.
+   * Con ella la pregunta es la correcta: si esos mismos 20M pujando te dan
+   * mas puntos, el clausulazo es mala idea aunque sea rentable.
+   */
+  market: {
+    bestCostPerPoint: number | null
+    playerName: string | null
+    price: Euros | null
+  }
+  /** Parametros de la valoracion, para poder auditar de donde salen las cifras. */
+  valuation: {
+    jornadasPlayed: number
+    jornadasRemaining: number
+    /** Euros de valor de mercado por punto restante. */
+    pricePerPoint: number
+    /** Puntos por jornada del jugador mediano de cada posicion. */
+    positionMean: Record<string, number>
+  }
   deadweight: { playerId: number; name: string; value: Euros; reason: string }[]
   /**
    * Once optimo para la proxima jornada. Es exacto, no aproximado: dentro de
@@ -118,14 +140,26 @@ export function analyze(
   const initialSquadValue = (id: number): Euros | undefined =>
     baseline?.initialSquadValueByManager?.[String(id)]
   const config = MLS_LEAGUE
-  const jornadasPlayed = Math.max(0, snapshot.currentJornada - 1)
   const valuation = buildValuationContext(
     snapshot.players.length > 0
       ? snapshot.players
       : snapshot.managers.flatMap((m) => m.squad),
-    jornadasPlayed,
+    Math.max(0, snapshot.currentJornada - 1),
     MLS_CONTRACT.totalJornadas,
   )
+
+  // Las jornadas disputadas salen de los datos, no del rotulo de la pagina.
+  // Si ambos discrepan lo decimos, porque de esa cifra cuelgan todas las
+  // medias y todo el calculo del bote.
+  const jornadasPlayed = valuation.jornadasPlayed
+  const segunLaPagina = Math.max(0, snapshot.currentJornada - 1)
+  if (snapshot.players.length > 0 && jornadasPlayed !== segunLaPagina) {
+    warnings = [
+      ...warnings,
+      `la pagina dice jornada ${snapshot.currentJornada} (${segunLaPagina} disputadas) pero los ` +
+        `datos de los jugadores dicen ${jornadasPlayed} disputadas; se usan los datos`,
+    ]
+  }
 
   const self = snapshot.managers.find((m) => m.id === snapshot.selfId)
   const rivalsRaw = snapshot.managers.filter((m) => m.id !== snapshot.selfId)
@@ -214,6 +248,9 @@ export function analyze(
       // Cota inferior: lo que con seguridad puede gastar. Separa la amenaza
       // real de la mera falta de informacion.
       capacityLow: spendingCapacity(view.balance, m.teamValue, config, 'best'),
+      // Su plantilla es lo que permite saber si un jugador tuyo le SIRVE, no
+      // solo si puede pagarlo. Sin esto, cualquiera con saldo era amenaza.
+      squad: m.squad,
     }
   })
 
@@ -228,7 +265,20 @@ export function analyze(
   const protectionBudget = Math.max(0, Math.round(ownBalance * 0.4))
   const protection = planProtection(threats, protectionBudget)
 
+  // Lo que cuesta el punto mas barato del mercado abierto. Es el liston con el
+  // que se juzga cualquier clausulazo: si esos euros compran puntos mas
+  // baratos pujando, robar no compensa aunque el robo sea rentable en si.
+  const playerById = new Map(snapshot.players.map((p) => [p.id, p]))
+  const ofertas = snapshot.market
+    .map((e) => ({ player: playerById.get(e.playerId), price: e.price }))
+    .filter((o): o is { player: Player; price: number } => o.player !== undefined && o.price > 0)
+  const benchmark = self
+    ? marketBenchmark(ofertas, self.squad, valuation, config, ownMaxSpend)
+    : { costPerPoint: Number.POSITIVE_INFINITY }
+
   const raidCtx = {
+    squad: self?.squad ?? [],
+    marketCostPerPoint: benchmark.costPerPoint,
     capacity: ownMaxSpend,
     squadSize: self?.squad.length ?? 0,
     clauseSigningsToday: 0,
@@ -334,6 +384,19 @@ export function analyze(
     protection,
     raids: raids.filter((r) => r.viable).slice(0, 15),
     raidPlan,
+    market: {
+      bestCostPerPoint: Number.isFinite(benchmark.costPerPoint) ? benchmark.costPerPoint : null,
+      playerName: 'player' in benchmark ? (benchmark.player?.name ?? null) : null,
+      price: 'price' in benchmark ? (benchmark.price ?? null) : null,
+    },
+    valuation: {
+      jornadasPlayed: valuation.jornadasPlayed,
+      jornadasRemaining: valuation.jornadasRemaining,
+      pricePerPoint: Math.round(valuation.pricePerPoint),
+      positionMean: Object.fromEntries(
+        Object.entries(valuation.positionMean).map(([k, v]) => [k, Math.round(v * 100) / 100]),
+      ),
+    },
     deadweight,
     lineup,
     contract: {

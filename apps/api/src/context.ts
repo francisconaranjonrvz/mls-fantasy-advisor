@@ -72,7 +72,20 @@ export interface DiagnosisShape {
     sportingValue: number
     profit: number
     roi: number
+    costPerPoint?: number
+    gain?: { remaining: number; displaces?: { name: string } }
   }[]
+  market?: {
+    bestCostPerPoint: number | null
+    playerName: string | null
+    price: number | null
+  }
+  valuation?: {
+    jornadasPlayed: number
+    jornadasRemaining: number
+    pricePerPoint: number
+    positionMean: Record<string, number>
+  }
   deadweight: { name: string; value: number; reason: string }[]
   warnings: string[]
 }
@@ -201,12 +214,50 @@ export function renderState(d: DiagnosisShape): string {
     L.push('')
   }
 
+  if (d.valuation) {
+    L.push('== COMO SE CALCULAN ESTAS CIFRAS ==')
+    L.push(
+      `Van ${d.valuation.jornadasPlayed} jornadas disputadas y quedan ` +
+        `${d.valuation.jornadasRemaining}. El punto se paga a ` +
+        `${fmt(d.valuation.pricePerPoint)} de valor de mercado.`,
+    )
+    L.push(
+      'Los puntos por jornada de cada jugador se encogen hacia la media de su posicion en ' +
+        'proporcion a las jornadas jugadas, porque con pocas jornadas la media observada es ' +
+        'ruido. Medias por posicion: ' +
+        Object.entries(d.valuation.positionMean).map(([k, v]) => `${k} ${v}`).join(', ') + '.',
+    )
+    L.push(
+      'Lo que aporta un fichaje NO son sus puntos sino la mejora del once: la diferencia con ' +
+        'el jugador al que desplaza. Por eso un crack en una posicion cubierta puede valer cero.',
+    )
+    L.push('')
+  }
+
+  if (d.market) {
+    L.push('== EL LISTON: QUE CUESTA UN PUNTO EN EL MERCADO ABIERTO ==')
+    L.push(
+      d.market.bestCostPerPoint !== null
+        ? `Lo mas barato hoy es ${d.market.playerName} a ${fmt(d.market.price ?? 0)}, que sale a ` +
+          `${fmt(d.market.bestCostPerPoint)} por punto. Cualquier clausulazo por encima de esa ` +
+          'cifra es peor que pujar.'
+        : 'Hoy el mercado abierto no ofrece nada que mejore el once, asi que no hay alternativa ' +
+          'con la que comparar un clausulazo.',
+    )
+    L.push('')
+  }
+
   if (d.raids.length > 0) {
     L.push('== CLAUSULAZOS VIABLES ==')
     for (const r of d.raids.slice(0, 10)) {
+      const extra = r.gain
+        ? ` Te suma ${r.gain.remaining.toFixed(0)} puntos hasta final de temporada` +
+          (r.gain.displaces ? ` desplazando a ${r.gain.displaces.name}` : ' rellenando un hueco') +
+          (r.costPerPoint !== undefined ? `, a ${fmt(Math.round(r.costPerPoint))} el punto.` : '.')
+        : ''
       L.push(
         `${r.player.name} (de ${r.ownerName}): clausula ${fmt(r.clause)}, ` +
-          `vale ${fmt(r.sportingValue)}, beneficio ${fmt(r.profit)}, retorno ${(r.roi * 100).toFixed(0)}%.`,
+          `precio justo ${fmt(r.sportingValue)}, beneficio ${fmt(r.profit)}.${extra}`,
       )
     }
     L.push('')

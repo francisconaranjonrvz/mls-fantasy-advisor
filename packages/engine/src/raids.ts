@@ -1,6 +1,8 @@
 import type { Euros, OwnedPlayer, LeagueConfig } from '@mls/core'
 import { clauseBase, defaultClause, isShielded } from './clauses.ts'
 import { sportingValue, valueRatio, type ValuationContext } from './valuation.ts'
+import { marginalGain, costPerPoint, type MarginalGain } from './marginal.ts'
+import { optimizeLineup, type LineupPlan } from './lineup.ts'
 
 /**
  * Busqueda de clausulazos.
@@ -28,11 +30,21 @@ export interface RaidTarget {
   ownerId: number
   ownerName: string
   clause: Euros
+  /** Precio justo del jugador. Sirve de referencia, no de criterio. */
   sportingValue: Euros
+  /**
+   * Lo que el fichaje mejora TU once. Es el criterio de verdad: un jugador
+   * excelente en una posicion que ya tienes cubierta no te aporta nada.
+   */
+  gain: MarginalGain
+  /** Euros por cada punto que suma al once. Mas bajo es mejor. */
+  costPerPoint: number
   /** Beneficio deportivo neto del robo, en euros. */
   profit: Euros
   /** Retorno por euro invertido. Ordena mejor que el beneficio absoluto. */
   roi: number
+  /** Si el punto sale mas barato aqui que en la mejor oferta del mercado. */
+  beatsMarket: boolean
   /** Clausula que tendria el jugador ya en tu equipo, tras el robo. */
   clauseAfterRaid: Euros
   blockers: RaidBlocker[]
@@ -40,6 +52,16 @@ export interface RaidTarget {
 }
 
 export interface RaidContext {
+  /** Tu plantilla. Sin ella no se puede saber a quien desplaza un fichaje. */
+  squad: OwnedPlayer[]
+  /**
+   * Coste por punto de la mejor oferta del mercado abierto. Es el listón: un
+   * clausulazo que sale mas caro que comprar en el mercado no compensa aunque
+   * su beneficio sea positivo. Infinito si el mercado no ofrece nada.
+   */
+  marketCostPerPoint: number
+  /** Once optimo actual, para no recalcularlo por cada candidato. */
+  baseline?: LineupPlan | undefined
   capacity: Euros
   squadSize: number
   /** Clausulas ya pagadas hoy, para respetar el limite diario. */
@@ -66,7 +88,13 @@ export function evaluateRaid(
   const base = clauseBase(player)
   const clause = player.clause ?? defaultClause(base, player.value)
   const sv = sportingValue(player, valuation)
-  const profit = sv - clause
+
+  const gain = marginalGain(player, raidCtx.squad, valuation, config, raidCtx.baseline)
+  const cpp = costPerPoint(clause, gain)
+  // El beneficio se mide sobre lo que el fichaje aporta a TU once, no sobre
+  // los puntos del jugador. Es la diferencia entre "es bueno" y "me sirve".
+  const profit = Math.round(gain.remaining * valuation.pricePerPoint) - clause
+  const beatsMarket = cpp < raidCtx.marketCostPerPoint
 
   const blockers: RaidBlocker[] = []
 
@@ -107,21 +135,26 @@ export function evaluateRaid(
     ownerName,
     clause,
     sportingValue: sv,
+    gain,
+    costPerPoint: cpp,
     profit,
     roi: clause > 0 ? profit / clause : 0,
+    beatsMarket,
     // Tras el robo, el precio pagado pasa a ser el precio de compra.
     clauseAfterRaid: Math.round(clause * 1.5),
     blockers,
-    viable: blockers.length === 0 && profit > 0,
+    // Que aporte puntos no basta: tienen que salir mas baratos que en el
+    // mercado abierto, que es la alternativa real para ese mismo dinero.
+    viable: blockers.length === 0 && gain.remaining > 0 && profit > 0 && beatsMarket,
   }
 }
 
 /**
- * Recorre las plantillas rivales y ordena los objetivos por retorno.
+ * Recorre las plantillas rivales y ordena los objetivos por coste del punto.
  *
- * Se ordena por ROI y no por beneficio absoluto porque el saldo es el recurso
- * escaso: con 20M prefieres dos robos que rinden un 40% cada uno que uno solo
- * que rinde un 25%.
+ * Se ordena por coste por punto y no por beneficio absoluto porque el saldo es
+ * el recurso escaso: con 20M prefieres dos fichajes que te den puntos a 300k
+ * que uno solo que te los de a 800k.
  */
 export function findRaidTargets(
   rivalSquads: { managerId: number; name: string; squad: OwnedPlayer[] }[],
@@ -129,15 +162,22 @@ export function findRaidTargets(
   raidCtx: RaidContext,
   config: LeagueConfig,
 ): RaidTarget[] {
+  // El once de partida es el mismo para todos los candidatos, asi que se
+  // calcula una vez: son dos centenares de jugadores rivales.
+  const ctx: RaidContext = {
+    ...raidCtx,
+    baseline: raidCtx.baseline ?? optimizeLineup(raidCtx.squad, valuation, config).best,
+  }
+
   const targets: RaidTarget[] = []
   for (const rival of rivalSquads) {
     for (const player of rival.squad) {
-      targets.push(evaluateRaid(player, rival.name, valuation, raidCtx, config))
+      targets.push(evaluateRaid(player, rival.name, valuation, ctx, config))
     }
   }
   return targets.sort((a, b) => {
     if (a.viable !== b.viable) return a.viable ? -1 : 1
-    return b.roi - a.roi
+    return a.costPerPoint - b.costPerPoint
   })
 }
 

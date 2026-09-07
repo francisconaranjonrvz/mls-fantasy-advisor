@@ -109,8 +109,11 @@ export function renderDiagnosis(d: Diagnosis): string {
       L.push(`### ${t.player.name} - riesgo ${t.risk}`)
       L.push('')
       L.push(`- Clausula actual: ${formatShort(t.clause)}`)
-      L.push(`- Vale deportivamente: ${formatShort(t.sportingValue)}`)
-      L.push(`- Beneficio para quien lo robe: **${formatShort(t.raidProfit)}**`)
+      L.push(`- Precio justo por lo que rinde: ${formatShort(t.sportingValue)}`)
+      L.push(
+        `- Beneficio para el rival al que mas le compensa: **${formatShort(t.raidProfit)}** ` +
+        '(medido sobre cuanto mejoraria SU once, no sobre lo bueno que es el jugador)',
+      )
       L.push(`- Pueden pagarla: ${t.threats.map((x) => x.name).join(', ') || 'nadie'}`)
       if (t.advice.action === 'subir' && t.advice.tier) {
         L.push(
@@ -140,7 +143,8 @@ export function renderDiagnosis(d: Diagnosis): string {
     for (const t of cebos) {
       L.push(
         `- **${t.player.name}**: clausula ${formatShort(t.clause)} frente a ` +
-        `${formatShort(t.sportingValue)} de valor deportivo. Si te lo roban, ganas.`,
+        `${formatShort(t.sportingValue)} de precio justo. A ningun rival le compensa pagarla, ` +
+        'y si alguno lo hace, cobras mas de lo que te aporta.',
       )
     }
     L.push('')
@@ -164,15 +168,30 @@ export function renderDiagnosis(d: Diagnosis): string {
   // --- Clausulazos ---
   L.push('## Clausulazos recomendados')
   L.push('')
-  if (d.raids.length === 0) {
-    L.push('Hoy no hay ningun robo que salga a cuenta con tu capacidad actual.')
+  if (d.market.bestCostPerPoint !== null) {
+    L.push(
+      `Referencia: hoy el punto mas barato del mercado abierto es ${d.market.playerName} a ` +
+      `${formatShort(d.market.price ?? 0)}, que sale a ${formatShort(d.market.bestCostPerPoint)} ` +
+      'por punto. Un clausulazo solo compensa si baja de esa cifra.',
+    )
   } else {
-    L.push('| Jugador | Dueno | Clausula | Vale | Beneficio | Retorno |')
-    L.push('|---|---|---:|---:|---:|---:|')
+    L.push(
+      'Hoy el mercado abierto no ofrece nada aprovechable, asi que cualquier mejora del once ' +
+      'que puedas pagar merece considerarse.',
+    )
+  }
+  L.push('')
+
+  if (d.raids.length === 0) {
+    L.push('Aun asi, hoy no hay ningun robo que salga a cuenta con tu capacidad actual.')
+  } else {
+    L.push('| Jugador | Dueno | Clausula | Puntos que ganas | Coste por punto | A quien sienta |')
+    L.push('|---|---|---:|---:|---:|---|')
     for (const r of d.raids) {
       L.push(
         `| ${r.player.name} | ${r.ownerName} | ${formatShort(r.clause)} | ` +
-        `${formatShort(r.sportingValue)} | ${formatShort(r.profit)} | ${(r.roi * 100).toFixed(0)}% |`,
+        `${r.gain.remaining.toFixed(0)} | ${formatShort(Math.round(r.costPerPoint))} | ` +
+        `${r.gain.displaces?.name ?? 'hueco libre'} |`,
       )
     }
     L.push('')
