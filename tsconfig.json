@@ -1,0 +1,12 @@
+{
+  "//": "Solo orquesta: no compila nada por si mismo, solo encadena los proyectos del monorepo para que `tsc -b` los recorra en orden de dependencia.",
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/mister-client" },
+    { "path": "./packages/engine" },
+    { "path": "./apps/scraper" },
+    { "path": "./apps/api" },
+    { "path": "./apps/web" }
+  ]
+}

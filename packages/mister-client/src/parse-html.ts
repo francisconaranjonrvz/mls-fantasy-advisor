@@ -434,6 +434,14 @@ export function describeStructure(
   selector: string,
   limit = 2,
   maxDepth = 5,
+  /**
+   * Atributos cuyo VALOR si se imprime. Vacio por defecto.
+   *
+   * Hace falta para los iconos: el estado de un jugador se decide mirando el
+   * `href` de un `<use>`, y sin ver ese valor no se puede escribir el selector.
+   * Solo deben listarse atributos estructurales; jamas un id de rival.
+   */
+  showValuesFor: readonly string[] = [],
 ): string[] {
   const $ = cheerio.load(html)
   const out: string[] = []
@@ -447,8 +455,9 @@ export function describeStructure(
       const cls = ($n.attr('class') ?? '').trim()
       // Solo los NOMBRES de los atributos de datos, nunca sus valores: un
       // data-id_player es inofensivo, pero no hace falta para escribir el parser.
-      const attrs = Object.keys(node.attribs ?? {})
-        .filter((a) => a !== 'class' && a !== 'style')
+      const attrs = Object.entries(node.attribs ?? {})
+        .filter(([a]) => a !== 'class' && a !== 'style')
+        .map(([a, v]) => (showValuesFor.includes(a) ? `${a}="${String(v).slice(0, 40)}"` : a))
         .join(' ')
       const ownText = $n.clone().children().remove().end().text().trim()
       const textNote = ownText ? ` texto(${ownText.length})` : ''

@@ -67,6 +67,64 @@ async function main(): Promise<void> {
 
   console.log('')
   console.log('='.repeat(72))
+  console.log('ESQUEMA REAL DEL CATALOGO DE JUGADORES')
+  console.log('(que claves trae de verdad /ajax/sw/players, con su tipo)')
+  console.log('='.repeat(72))
+  try {
+    const catalogo = await api.getAllPlayers(50, 1)
+    console.log(`  ${catalogo.length} registros en la primera pagina`)
+    const claves = new Map<string, { tipos: Set<string>; conValor: number; muestra: string }>()
+    for (const rec of catalogo) {
+      for (const [k, v] of Object.entries(rec)) {
+        const info = claves.get(k) ?? { tipos: new Set<string>(), conValor: 0, muestra: '' }
+        info.tipos.add(v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v)
+        if (v !== null && v !== undefined && v !== '') {
+          info.conValor++
+          if (!info.muestra) info.muestra = sanea(JSON.stringify(v)).slice(0, 60)
+        }
+        claves.set(k, info)
+      }
+    }
+    for (const [k, info] of [...claves].sort()) {
+      console.log(
+        `    ${k.padEnd(22)} tipos=${[...info.tipos].join('|').padEnd(16)} ` +
+          `conValor=${String(info.conValor).padStart(3)}/${catalogo.length}  ej=${info.muestra}`,
+      )
+    }
+  } catch (err) {
+    console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
+  }
+
+  console.log('')
+  console.log('='.repeat(72))
+  console.log('MARCADO DE UNA FILA DE JUGADOR EN /team')
+  console.log('(el estado se decide por iconos, asi que aqui SI se imprime el')
+  console.log(' valor de href y data-position: son estructura, no contenido)')
+  console.log('='.repeat(72))
+  try {
+    const teamHtml = await api.getTeamHtml()
+    const filas = describeStructure(teamHtml, '.player-row', 3, 9, ['href', 'xlink:href', 'data-position', 'src'])
+    if (filas.length === 0) console.log('  ninguna .player-row en /team')
+    for (const f of filas) console.log(f)
+
+    console.log('')
+    console.log('  recuento por selector de estado sobre TODAS las filas:')
+    for (const sel of [
+      '.player-row', '.player-row .st-injury', '.player-row use[href*="#injury"]',
+      '.player-row use[href*="#doubt"]', '.player-row use[href*="#sanction"]',
+      '.player-row a.team-logo', '.player-row img.team-logo', '.player-row .shield',
+      '.player-row .player-position', '.player-row .points', '.player-row .underName',
+    ]) {
+      const shape = describeHtml(teamHtml, [sel], 0)
+      const n = shape.matches[0]?.count ?? 0
+      console.log(`    ${String(n).padStart(4)}  ${sel}`)
+    }
+  } catch (err) {
+    console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
+  }
+
+  console.log('')
+  console.log('='.repeat(72))
   console.log('CAMPO sign DEL LIBRO DE MOVIMIENTOS')
   console.log('='.repeat(72))
   try {
