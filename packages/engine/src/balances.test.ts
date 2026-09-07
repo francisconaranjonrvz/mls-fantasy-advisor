@@ -161,9 +161,10 @@ describe('restricciones del juego que estrechan el intervalo', () => {
       },
       MLS_LEAGUE,
     )
-    // Caja minima 20M, movimientos netos -5M => suelo de hoy 15M.
-    expect(e.low).toBeGreaterThanOrEqual(M(15))
-    expect(e.constraintsApplied.join(' ')).toMatch(/margen de deuda/)
+    // Caja minima 20M, movimientos netos -5M => suelo de hoy 15M. Pero el
+    // reparto solo da 12,5M, asi que la restriccion y la reconstruccion no
+    // pueden ser las dos ciertas y se declara la inconsistencia.
+    expect(e.unknowns.join(' ')).toMatch(/solvencia observada no cuadra/)
   })
 
   it('no exige del saldo de hoy lo que se pago hace tres semanas', () => {
@@ -428,26 +429,35 @@ describe('la caja inicial se lee, no se supone', () => {
     expect(est.exact).toBe(false)
   })
 
-  it('si las restricciones contradicen la regla, ensancha y lo dice', () => {
+  it('si la solvencia no cuadra con la regla, manda lo observado y se declara', () => {
     /**
-     * La regla se midio una sola vez. Si algun rival se comporta de forma
-     * incompatible con ella (paga algo que con esa caja no podria pagar), lo
-     * correcto es ensanchar el intervalo y decirlo, no cerrar el numero por la
-     * fuerza y presentarlo como cierto.
+     * La regla del reparto se midio una sola vez, y el margen de deuda se
+     * modela sobre el valor de equipo de HOY porque el de entonces no se
+     * conoce. Cuando la restriccion y la reconstruccion chocan no se sabe cual
+     * falla, asi que mandan los datos observados y se avisa.
+     *
+     * Ensanchar hasta cubrir las dos era peor: devolvia intervalos de veinte
+     * millones que no sirven para decidir nada, que es justo lo que se estaba
+     * intentando arreglar.
      */
     const imposible = reconstructBalance(
       {
         managerId: 9,
         // Paga 60M teniendo, segun la regla, 12,5M de caja y 10M de margen.
-        transactions: [tx('buyout_signing', -M(60))],
+        transactions: [{ ...tx('buyout_signing', -M(60)), date: '2026-08-20T05:00:00Z' }],
         historyComplete: true,
         teamValue: M(40),
         averageLineupValue: M(30),
+        jornadaRanks: [],
+        clauseRaisesObserved: true,
       },
       MLS_LEAGUE,
     )
     expect(imposible.high).toBeGreaterThanOrEqual(imposible.low)
-    expect(imposible.unknowns.join(' ')).toMatch(/contradicen/)
+    expect(imposible.unknowns.join(' ')).toMatch(/solvencia observada no cuadra/)
+    // Y el intervalo sigue siendo el de la reconstruccion, no uno inventado.
+    const banda = MLS_LEAGUE.initialBudget * MLS_LEAGUE.initialSquadTolerance * 2
+    expect(imposible.high - imposible.low).toBeLessThanOrEqual(banda)
   })
 
   it('un baseline declarado manda sobre el supuesto', () => {

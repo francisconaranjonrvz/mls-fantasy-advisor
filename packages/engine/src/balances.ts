@@ -399,7 +399,24 @@ export function reconstructBalance(
     // caja_inicial + minimo >= -margen  =>  caja_inicial >= -margen - minimo
     const cajaMinima = -margen - minimo
     const sueloFinal = cajaMinima + acumulado
-    if (sueloFinal > low) {
+
+    if (sueloFinal > high) {
+      // La restriccion y la reconstruccion no pueden ser las dos ciertas.
+      //
+      // Y no se sabe cual falla: puede que a este manager el reparto inicial
+      // le diera mas de lo que dice la regla, o puede que el margen de deuda
+      // no sea exactamente el 25% del valor de equipo de HOY, que es lo que se
+      // usa aqui por no tener el de entonces.
+      //
+      // Ante la duda mandan los datos observados, no un margen modelado: se
+      // deja el intervalo como esta y se declara la inconsistencia. Ensanchar
+      // hasta cubrir las dos no informa de nada, solo devuelve un intervalo
+      // tan ancho que no sirve para decidir.
+      unknowns.push(
+        'la solvencia observada no cuadra con el reparto inicial supuesto para este manager; ' +
+          'manda lo observado, pero su saldo es menos fiable que el del resto',
+      )
+    } else if (sueloFinal > low) {
       low = sueloFinal
       constraintsApplied.push(
         'en ningun momento del historial pudo bajar del margen de deuda',
