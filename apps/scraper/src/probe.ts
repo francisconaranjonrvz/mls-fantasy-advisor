@@ -67,6 +67,34 @@ async function main(): Promise<void> {
 
   console.log('')
   console.log('='.repeat(72))
+  console.log('PROGRESION: QUE JORNADAS SE HAN PUNTUADO DE VERDAD')
+  console.log('(los nombres de manager se sustituyen por su posicion en la lista)')
+  console.log('='.repeat(72))
+  try {
+    const prog = (await api.getProgression()) as {
+      progression?: {
+        gameweeks?: unknown[]
+        users?: { user?: Record<string, unknown>; points?: unknown; positions?: unknown }[]
+      }
+    }
+    const p = prog?.progression
+    console.log(`  jornadas listadas: ${JSON.stringify(p?.gameweeks ?? null)}`)
+    console.log(`  managers: ${p?.users?.length ?? 0}`)
+    const primero = p?.users?.[0]
+    if (primero) {
+      console.log(`  claves de un manager: ${Object.keys(primero).join(', ')}`)
+      console.log(`  claves de .user: ${Object.keys(primero.user ?? {}).join(', ')}`)
+      for (const [k, v] of Object.entries(primero)) {
+        if (k === 'user') continue
+        console.log(`    ${k} = ${sanea(JSON.stringify(v))}`)
+      }
+    }
+  } catch (err) {
+    console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
+  }
+
+  console.log('')
+  console.log('='.repeat(72))
   console.log('ESQUEMA REAL DEL CATALOGO DE JUGADORES')
   console.log('(que claves trae de verdad /ajax/sw/players, con su tipo)')
   console.log('='.repeat(72))
