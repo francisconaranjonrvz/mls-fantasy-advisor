@@ -150,6 +150,41 @@ El Worker sirve el dashboard y expone `/api/chat`. Hace falta porque la clave
 de la IA no puede viajar al navegador: cualquier clave que llegue al cliente es
 publica.
 
+### Via recomendada: desplegar desde GitHub
+
+No requiere instalar nada ni iniciar sesion en Cloudflare desde tu maquina, y
+las claves nunca pasan por una terminal.
+
+**Paso 1.** Crea un token de API en Cloudflare:
+`dash.cloudflare.com` > *My Profile* > *API Tokens* > *Create Token* >
+plantilla **Edit Cloudflare Workers**. Copia el token.
+
+**Paso 2.** Copia tambien tu **Account ID**, que sale en la barra lateral de
+`dash.cloudflare.com` (o en la URL del panel).
+
+**Paso 3.** Guarda ambos en el repositorio, en
+`Settings > Secrets and variables > Actions > Repository secrets`:
+
+| Secret | Valor |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | el token del paso 1 |
+| `CLOUDFLARE_ACCOUNT_ID` | el id del paso 2 |
+| `NVIDIA_API_KEY` | tu clave `nvapi-...` |
+
+`DATA_REPO_TOKEN` ya deberia estar puesto del paso 3 de esta guia.
+
+**Paso 4.** Lanza el workflow **Desplegar el dashboard** desde la pestana
+*Actions*. A partir de ahi se redespliega solo cada vez que cambie el codigo
+del Worker, del dashboard o del motor.
+
+El workflow compila el dashboard, despliega el Worker y sincroniza los secretos
+de Cloudflare a partir de los del repositorio, para que no haya que acordarse
+de ponerlos a mano.
+
+Queda publicado en `https://mls-fantasy-advisor.<tu-subdominio>.workers.dev`.
+
+### Via manual, desde tu maquina
+
 ```bash
 pnpm install
 pnpm --filter @mls/web build
@@ -159,10 +194,10 @@ npx wrangler secret put NVIDIA_API_KEY   # pega tu clave nvapi-...
 npx wrangler deploy
 ```
 
-Queda publicado en `https://mls-fantasy-advisor.<tu-subdominio>.workers.dev`.
+### Cerrar el chat a tu propia web
 
-Conviene ademas fijar el origen permitido para que nadie que dé con la URL
-pueda gastarte la cuota de IA:
+Conviene fijar el origen permitido para que nadie que dé con la URL pueda
+gastarte la cuota de IA. Se hace una vez, cuando ya sabes la URL publicada:
 
 ```bash
 npx wrangler secret put ALLOWED_ORIGIN   # https://mls-fantasy-advisor.<...>.workers.dev

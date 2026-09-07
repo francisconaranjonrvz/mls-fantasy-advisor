@@ -1,0 +1,89 @@
+name: Desplegar el dashboard
+
+# Publica el Worker, que sirve a la vez el dashboard compilado y /api/chat.
+#
+# Se despliega desde CI y no desde un portatil por dos razones. La primera es
+# que asi no hace falta tener wrangler instalado ni iniciar sesion a mano cada
+# vez. La segunda, mas importante: las claves viven como secrets del
+# repositorio y de Cloudflare, y no pasan por ninguna terminal.
+on:
+  push:
+    branches: [main]
+    # Solo cuando cambia algo que acabe dentro del Worker. Un commit que toca
+    # el scraper o la documentacion no tiene por que redesplegar nada.
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+# Un despliegue a la vez, y si llegan dos seguidos que gane el ultimo.
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Sin token no se puede desplegar, y conviene decirlo con claridad en vez
+      # de dejar que wrangler falle con un error de autenticacion generico.
+      - name: Comprobar que hay credenciales de Cloudflare
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$ACCOUNT" ]; then
+            echo "::error::Faltan los secrets CLOUDFLARE_API_TOKEN y/o CLOUDFLARE_ACCOUNT_ID."
+            echo "Ver docs/DESPLIEGUE.md, apartado 'Dashboard y asesor'."
+            exit 1
+          fi
+
+      # El Worker sirve estos ficheros tal cual, asi que se compilan antes.
+      - name: Compilar el dashboard
+        run: pnpm --filter @mls/web build
+
+      - name: Desplegar
+        working-directory: apps/api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec wrangler deploy
+
+      # Los secretos del Worker (la clave de NVIDIA, el token del repo privado)
+      # se sincronizan aqui para que no haya que acordarse de ponerlos a mano
+      # despues de cada despliegue. wrangler los guarda cifrados en Cloudflare;
+      # no quedan en el log ni en el repositorio.
+      - name: Sincronizar secretos del Worker
+        working-directory: apps/api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          DATA_REPO_TOKEN: ${{ secrets.DATA_REPO_TOKEN }}
+        run: |
+          put() {
+            if [ -n "$2" ]; then
+              printf '%s' "$2" | pnpm exec wrangler secret put "$1" >/dev/null
+              echo "  $1 actualizado"
+            else
+              echo "  $1 sin definir, se deja como estaba"
+            fi
+          }
+          put NVIDIA_API_KEY "$NVIDIA_API_KEY"
+          put DATA_REPO_TOKEN "$DATA_REPO_TOKEN"
