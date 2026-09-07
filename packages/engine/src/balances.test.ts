@@ -138,20 +138,58 @@ describe('restricciones del juego que estrechan el intervalo', () => {
     expect(e.constraintsApplied.join(' ')).toMatch(/negativo/)
   })
 
-  it('un desembolso grande demuestra un suelo de saldo', () => {
+  it('un desembolso grande demuestra un suelo, pero de la caja de PARTIDA', () => {
+    /**
+     * Aqui tenia un error de razonamiento. Exigia el mayor desembolso del
+     * saldo de HOY, y eso no se sigue: se puede pagar un clausulazo de 30M y
+     * quedarse despues a cero. Lo que si se sigue es que la caja de partida
+     * daba para llegar hasta ahi sin pasarse del margen de deuda.
+     *
+     * Pago 30M con 10M de margen, luego arranco con 20M como minimo. Si
+     * despues no ingreso nada, hoy tiene al menos 20 - 30 + 10 = 0... o sea,
+     * el suelo de hoy es la caja minima mas todo lo movido.
+     */
     const e = reconstructBalance(
       {
         managerId: 4,
-        historyComplete: false,
+        historyComplete: true,
         teamValue: M(40),        // margen de deuda = 10M
         averageLineupValue: M(30),
-        transactions: [tx('buyout_signing', M(-30))],
+        jornadaRanks: [],
+        clauseRaisesObserved: true,
+        transactions: [tx('buyout_signing', M(-30)), tx('sale', M(25))],
       },
       MLS_LEAGUE,
     )
-    // Pago 30M con 10M de margen => tenia al menos 20M de saldo.
-    expect(e.low).toBeGreaterThanOrEqual(M(20))
+    // Caja minima 20M, movimientos netos -5M => suelo de hoy 15M.
+    expect(e.low).toBeGreaterThanOrEqual(M(15))
     expect(e.constraintsApplied.join(' ')).toMatch(/margen de deuda/)
+  })
+
+  it('no exige del saldo de hoy lo que se pago hace tres semanas', () => {
+    // Pago 30M y luego se lo gasto todo. Su saldo de hoy puede ser cero sin
+    // que eso contradiga nada, y antes esto salia como contradiccion.
+    const e = reconstructBalance(
+      {
+        managerId: 5,
+        historyComplete: true,
+        teamValue: M(40),
+        averageLineupValue: M(30),
+        jornadaRanks: [],
+        clauseRaisesObserved: true,
+        // Pago 20M el dia 20, cobro 28M el 21 y volvio a gastar 5M en
+        // septiembre. Con 10M de margen le bastaba con arrancar con 10M, que
+        // es menos que los 12,5M que reparte la regla: todo cuadra.
+        transactions: [
+          { ...tx('buyout_signing', M(-20)), date: '2026-08-20T05:00:00Z' },
+          { ...tx('sale', M(28)), date: '2026-08-21T05:00:00Z' },
+          { ...tx('purchase', M(-5)), date: '2026-09-01T05:00:00Z' },
+        ],
+      },
+      MLS_LEAGUE,
+    )
+    expect(e.high).toBeGreaterThanOrEqual(e.low)
+    expect(e.unknowns.join(' ')).not.toMatch(/contradicen/)
   })
 })
 

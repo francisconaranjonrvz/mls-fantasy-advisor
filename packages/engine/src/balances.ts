@@ -374,15 +374,35 @@ export function reconstructBalance(
     constraintsApplied.push('puntuo en alguna jornada, luego no arranco en negativo')
   }
 
-  // Cada desembolso observado demuestra que tenia con que pagarlo.
-  const outlays = txs.filter((t) => t.amount < 0).map((t) => -t.amount)
-  if (outlays.length > 0) {
-    const biggest = Math.max(...outlays)
-    const impliedFloor = biggest - Math.round(ledger.teamValue * config.maxDebtPctOfTeamValue)
-    if (impliedFloor > low) {
-      low = impliedFloor
+  // Cada desembolso observado demuestra que tenia con que pagarlo, pero EN SU
+  // MOMENTO, no ahora.
+  //
+  // Aqui tenia un error de razonamiento. Cogia el mayor desembolso y lo exigia
+  // del saldo de HOY, y eso no se sigue: se puede pagar un clausulazo de 23M y
+  // quedarse despues a cero. Con historial incompleto era una heuristica que
+  // colaba; con el historial entero delante, seis de los nueve rivales salian
+  // contradiciendose contra su propia reconstruccion.
+  //
+  // Con las fechas se puede hacer bien. El saldo nunca baja del margen de
+  // deuda en NINGUN instante, asi que se recorre el libro en orden y se mira
+  // el punto mas bajo. Ese minimo acota la caja de partida, y con ella el
+  // saldo de hoy. Es una cota valida y bastante mas fina que la anterior.
+  const fechados = txs.filter((t) => t.date).sort((a, b) => a.date.localeCompare(b.date))
+  if (ledger.historyComplete && fechados.length > 0) {
+    let acumulado = 0
+    let minimo = 0
+    for (const t of fechados) {
+      acumulado += t.amount
+      if (acumulado < minimo) minimo = acumulado
+    }
+    const margen = Math.round(ledger.teamValue * config.maxDebtPctOfTeamValue)
+    // caja_inicial + minimo >= -margen  =>  caja_inicial >= -margen - minimo
+    const cajaMinima = -margen - minimo
+    const sueloFinal = cajaMinima + acumulado
+    if (sueloFinal > low) {
+      low = sueloFinal
       constraintsApplied.push(
-        'pago una operacion que solo cubria con ese saldo mas el margen de deuda',
+        'en ningun momento del historial pudo bajar del margen de deuda',
       )
     }
   }
