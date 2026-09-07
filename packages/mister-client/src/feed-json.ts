@@ -98,15 +98,47 @@ function itemList(item: RawFeedItem, key?: string): Record<string, unknown>[] {
   return []
 }
 
-/** Fecha de la entrada en ISO, si trae una utilizable. */
-export function feedItemDate(item: RawFeedItem): string | undefined {
+/** Cuanto dura cada unidad de las fechas relativas del feed, en milisegundos. */
+const UNIDADES: Record<string, number> = {
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  sem: 604_800_000,
+  mes: 2_592_000_000,
+  a: 31_536_000_000,
+}
+
+/**
+ * Fecha de una entrada del feed, en ISO.
+ *
+ * Mister la sirve de dos formas y hay que aceptar las dos. Las entradas
+ * recientes traen un relativo del estilo "5h" o "10d"; algunas traen la marca
+ * absoluta "2026-09-07 05:00:01".
+ *
+ * No es un detalle de presentacion. Sin fecha no se pueden ordenar los apuntes,
+ * y sin orden no se puede comprobar que el saldo de un rival nunca bajo del
+ * margen de deuda, que es la restriccion que mas estrecha su intervalo. Con la
+ * fecha vacia esa comprobacion simplemente no se ejecutaba.
+ *
+ * El relativo es aproximado por definicion, pero para ordenar basta y sobra.
+ */
+export function feedItemDate(item: RawFeedItem, now: Date = new Date()): string | undefined {
   const raw = item['date'] ?? item['created']
-  if (typeof raw !== 'string') return undefined
-  // Formato "2026-09-07 05:00:01". Se interpreta como hora de Madrid, que es
-  // la que usa Mister, y se guarda en ISO para poder ordenar sin ambiguedad.
-  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(raw)
-  if (!m) return undefined
-  return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}.000Z`
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+
+  // Absoluta: "2026-09-07 05:00:01".
+  const abs = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(raw)
+  if (abs) return `${abs[1]}-${abs[2]}-${abs[3]}T${abs[4]}:${abs[5]}:${abs[6]}.000Z`
+
+  // Relativa: "5h", "10d", "3 sem", "hace 2 horas".
+  const rel = /(\d+)\s*(sem|mes|[smhda])/i.exec(raw)
+  if (rel) {
+    const n = Number.parseInt(rel[1] ?? '', 10)
+    const ms = UNIDADES[(rel[2] ?? '').toLowerCase()]
+    if (Number.isFinite(n) && ms) return new Date(now.getTime() - n * ms).toISOString()
+  }
+  return undefined
 }
 
 /**
@@ -143,12 +175,12 @@ const PURCHASE_TYPE: Record<'clause' | 'loan' | 'normal', TransactionType> = {
  * manager de la liga. Si `id_uc_from` o `id_uc_to` valen 0, esa parte es
  * Mister y no tiene saldo que reconstruir.
  */
-export function transfersToTransactions(items: RawFeedItem[]): Transaction[] {
+export function transfersToTransactions(items: RawFeedItem[], now = new Date()): Transaction[] {
   const out: Transaction[] = []
 
   for (const item of items) {
     if (item['category'] !== 'transfer') continue
-    const date = feedItemDate(item) ?? ''
+    const date = feedItemDate(item, now) ?? ''
 
     for (const raw of itemList(item)) {
       const t = raw as RawTransfer
@@ -225,14 +257,14 @@ export function poolsFromFeed(items: RawFeedItem[]): PoolResult[] {
 }
 
 /** Los cobros de quiniela, ya como apuntes contables. */
-export function poolsToTransactions(items: RawFeedItem[]): Transaction[] {
+export function poolsToTransactions(items: RawFeedItem[], now = new Date()): Transaction[] {
   const fechaPorJornada = new Map<number, string>()
   for (const item of items) {
     if (item['category'] !== 'gameweek_end_pools') continue
     const data = item['data']
     if (data && typeof data === 'object' && !Array.isArray(data)) {
       const id = toInt((data as Record<string, unknown>)['id_gameweek'])
-      const f = feedItemDate(item)
+      const f = feedItemDate(item, now)
       if (id > 0 && f) fechaPorJornada.set(id, f)
     }
   }
@@ -296,12 +328,13 @@ export const tierOfMultiplier = (multiplier: number): number =>
 export function clauseChangesToTransactions(
   items: RawFeedItem[],
   resolveManager: (name: string) => number | undefined,
+  now = new Date(),
 ): Transaction[] {
   const out: Transaction[] = []
 
   for (const item of items) {
     if (item['category'] !== 'clauses_drops') continue
-    const date = feedItemDate(item) ?? ''
+    const date = feedItemDate(item, now) ?? ''
 
     for (const c of clauseChangesFromFeed([item])) {
       const managerId = resolveManager(c.ownerName)
@@ -339,6 +372,7 @@ export function clauseChangesToTransactions(
 export function paymentsToTransactions(
   items: RawFeedItem[],
   resolveManager: (name: string) => number | undefined,
+  now = new Date(),
 ): Transaction[] {
   const out: Transaction[] = []
 
@@ -346,7 +380,7 @@ export function paymentsToTransactions(
     if (item['category'] !== 'payment') continue
     const data = item['data']
     if (!data || typeof data !== 'object' || Array.isArray(data)) continue
-    const date = feedItemDate(item) ?? ''
+    const date = feedItemDate(item, now) ?? ''
     const motivo = (data as Record<string, unknown>)['reason']
     const reason = typeof motivo === 'string' ? motivo : ''
 

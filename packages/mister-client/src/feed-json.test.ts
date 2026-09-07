@@ -259,8 +259,30 @@ describe('fechas del feed', () => {
     expect(feedItemDate(TRASPASO)).toBe('2026-09-05T05:00:02.000Z')
   })
 
+  it('entiende las relativas, que es como llega casi todo el feed', () => {
+    /**
+     * Esto no es cosmetica. Con la fecha vacia no se pueden ordenar los
+     * apuntes, y sin orden no se puede comprobar que el saldo de un rival
+     * nunca bajo del margen de deuda, que es la restriccion que mas estrecha
+     * su intervalo. Estaba pasando: todos los apuntes de rivales salian sin
+     * fecha y esa comprobacion no llegaba a ejecutarse.
+     */
+    const ahora = new Date('2026-09-07T18:00:00.000Z')
+    expect(feedItemDate({ date: '5h' }, ahora)).toBe('2026-09-07T13:00:00.000Z')
+    expect(feedItemDate({ date: '10d' }, ahora)).toBe('2026-08-28T18:00:00.000Z')
+    expect(feedItemDate({ date: 'hace 12 horas' }, ahora)).toBe('2026-09-07T06:00:00.000Z')
+  })
+
+  it('ordena bien lo relativo: mas dias es mas antiguo', () => {
+    const ahora = new Date('2026-09-07T18:00:00.000Z')
+    const viejo = feedItemDate({ date: '10d' }, ahora)!
+    const nuevo = feedItemDate({ date: '2h' }, ahora)!
+    expect(viejo < nuevo).toBe(true)
+  })
+
   it('devuelve undefined si no hay fecha utilizable', () => {
-    expect(feedItemDate({ date: 'hace 12 horas' })).toBeUndefined()
     expect(feedItemDate({})).toBeUndefined()
+    expect(feedItemDate({ date: '' })).toBeUndefined()
+    expect(feedItemDate({ date: 'ayer' })).toBeUndefined()
   })
 })

@@ -320,12 +320,24 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     const resolver = (nombre: string): number | undefined =>
       porNombre.get(nombre.toLowerCase().trim())
 
+    // Las fechas del feed son relativas ("5h", "10d"), asi que hay que
+    // resolverlas contra el instante del snapshot y no contra el reloj de cada
+    // llamada, para que dos apuntes de la misma pasada sean comparables.
+    const ahora = new Date(snapshotAt)
     const todos = [
-      ...transfersToTransactions(items),
-      ...poolsToTransactions(items),
-      ...clauseChangesToTransactions(items, resolver),
-      ...paymentsToTransactions(items, resolver),
+      ...transfersToTransactions(items, ahora),
+      ...poolsToTransactions(items, ahora),
+      ...clauseChangesToTransactions(items, resolver, ahora),
+      ...paymentsToTransactions(items, resolver, ahora),
     ]
+
+    const sinFecha = todos.filter((t) => !t.date).length
+    if (sinFecha > 0) {
+      warn(
+        `${sinFecha} apuntes del feed vienen sin fecha reconocible, asi que no entran en la ` +
+          'comprobacion de que el saldo nunca bajo del margen de deuda',
+      )
+    }
 
     // Los propios se descartan: para uno mismo manda el libro de balance, que
     // es autoritativo y trae el saldo resultante de cada apunte.
