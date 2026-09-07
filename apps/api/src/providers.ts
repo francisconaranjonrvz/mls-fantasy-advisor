@@ -88,11 +88,32 @@ interface OpenAiChatResponse {
  * proveedores nuevos. Es peor modelo, pero mantiene el chat vivo si NVIDIA se
  * queda sin creditos.
  */
+/**
+ * Modelos de Workers AI, del mas capaz al mas rapido.
+ *
+ * El orden importa mas de lo que parece. Con llama-3.1-8b, que era lo que
+ * habia, la pregunta "a quien ficho hoy" se contestaba con "no has fichado a
+ * nadie hoy": el modelo no entendia que preguntaba por una decision pendiente
+ * y no por un hecho pasado, y eso pasaba con el contexto correcto delante. Un
+ * modelo de 8B no aguanta un prompt de sistema largo con reglas, estado de
+ * liga y tablas de numeros.
+ */
+export const WORKERS_AI_MODELS = [
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  '@cf/mistralai/mistral-small-3.1-24b-instruct',
+  '@cf/meta/llama-3.1-8b-instruct-fast',
+] as const
+
 export class WorkersAiProvider implements LlmProvider {
   readonly name = 'workers-ai' as const
-  readonly model = '@cf/meta/llama-3.1-8b-instruct-fast'
+  readonly model: string
 
-  constructor(private readonly ai: { run: (model: string, input: unknown) => Promise<unknown> }) {}
+  constructor(
+    private readonly ai: { run: (model: string, input: unknown) => Promise<unknown> },
+    model: string = WORKERS_AI_MODELS[0],
+  ) {
+    this.model = model
+  }
 
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
     const out = (await this.ai.run(this.model, {
@@ -131,6 +152,8 @@ export interface ProviderEnv {
   AI_PROVIDER?: string
   NVIDIA_API_KEY?: string
   NVIDIA_MODEL?: string
+  /** Modelo de Workers AI a probar primero, si se quiere forzar uno. */
+  WORKERS_AI_MODEL?: string
   AI?: { run: (model: string, input: unknown) => Promise<unknown> }
 }
 
@@ -143,7 +166,14 @@ export function buildProviders(env: ProviderEnv): LlmProvider[] {
     chain.push(new NvidiaProvider(env.NVIDIA_API_KEY, env.NVIDIA_MODEL || NVIDIA_MODELS.primary))
   }
   if (env.AI) {
-    chain.push(new WorkersAiProvider(env.AI))
+    // Los tres, del mas capaz al mas rapido. chatWithFallback los prueba en
+    // orden, asi que si el bueno no esta disponible o falla, sigue habiendo
+    // asesor en lugar de un error.
+    const preferido = env.WORKERS_AI_MODEL
+    if (preferido) chain.push(new WorkersAiProvider(env.AI, preferido))
+    for (const m of WORKERS_AI_MODELS) {
+      if (m !== preferido) chain.push(new WorkersAiProvider(env.AI, m))
+    }
   }
   if (preferred === 'workers-ai') chain.reverse()
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { renderState, buildSystemPrompt, type DiagnosisShape } from './context.ts'
-import { stripReasoning, buildProviders, NVIDIA_MODELS } from './providers.ts'
+import { stripReasoning, buildProviders, NVIDIA_MODELS, WORKERS_AI_MODELS } from './providers.ts'
 
 const DIAGNOSIS: DiagnosisShape = {
   generatedAt: '2026-09-02T05:20:00.000Z',
@@ -97,7 +97,26 @@ describe('buildProviders', () => {
 
   it('encadena Workers AI como respaldo si NVIDIA se queda sin creditos', () => {
     const chain = buildProviders({ NVIDIA_API_KEY: 'nvapi-x', AI: { run: async () => ({}) } })
-    expect(chain.map((p) => p.name)).toEqual(['nvidia', 'workers-ai'])
+    expect(chain[0]!.name).toBe('nvidia')
+    expect(chain.slice(1).every((p) => p.name === 'workers-ai')).toBe(true)
+  })
+
+  it('prueba varios modelos de Workers AI, del mas capaz al mas rapido', () => {
+    // Con un modelo solo, y ademas el de 8B, el asesor entendia mal preguntas
+    // sencillas. Si el bueno no esta disponible conviene tener a que caer.
+    const chain = buildProviders({ AI: { run: async () => ({}) } })
+    expect(chain.length).toBeGreaterThan(1)
+    expect(chain[0]!.model).toBe(WORKERS_AI_MODELS[0])
+    expect(new Set(chain.map((p) => p.model)).size).toBe(chain.length)
+  })
+
+  it('WORKERS_AI_MODEL fuerza uno concreto sin quitar los de respaldo', () => {
+    const chain = buildProviders({
+      AI: { run: async () => ({}) },
+      WORKERS_AI_MODEL: '@cf/meta/llama-3.1-8b-instruct-fast',
+    })
+    expect(chain[0]!.model).toBe('@cf/meta/llama-3.1-8b-instruct-fast')
+    expect(new Set(chain.map((p) => p.model)).size).toBe(chain.length)
   })
 
   it('respeta AI_PROVIDER para invertir la preferencia sin tocar codigo', () => {
