@@ -253,9 +253,25 @@ export class MisterEndpoints {
    */
   async getAllFeed(maxPages = 60): Promise<{ items: RawFeedItem[]; complete: boolean }> {
     const all: RawFeedItem[] = []
+    const vistos = new Set<number>()
+
+    // Ojo con el solape. Cada pagina devuelve VEINTIUNA entradas aunque el
+    // paso sea de veinte, asi que concatenarlas a secas repite una por pagina:
+    // veintidos apuntes de mas en las veintidos paginas de esta liga, que se
+    // suman al gasto de los rivales y descuadran su saldo sin dar ningun
+    // sintoma. Se deduplica por el id de la entrada.
     for (let page = 0; page < maxPages; page++) {
       const { items, end } = await this.getFeedPage(page * FEED_PAGE_SIZE)
-      all.push(...items)
+      for (const item of items) {
+        const id = Number(item.id)
+        // Las entradas promocionales llegan sin id util; no aportan apuntes,
+        // asi que se dejan pasar en vez de descartarlas por un id repetido.
+        if (Number.isFinite(id) && id > 0) {
+          if (vistos.has(id)) continue
+          vistos.add(id)
+        }
+        all.push(item)
+      }
       // Solo se declara completo si fue el SERVIDOR quien dijo que no hay mas.
       // Si se acabaran las paginas permitidas, el historial estaria cortado y
       // dar por completo lo que no lo es convertiria una estimacion honesta en
