@@ -21,6 +21,11 @@ export const playerSchema = z.object({
   status: playerStatusSchema,
   trend: z.enum(['up', 'down', 'flat']).optional(),
   streak: z.array(z.number().int()).optional(),
+  average: z.number().optional(),
+  nextFixture: z.object({
+    rivalTeamId: z.number().int(),
+    isHome: z.boolean(),
+  }).optional(),
   ownerId: z.number().int().positive().optional(),
 })
 
@@ -29,6 +34,7 @@ export const ownedPlayerSchema = playerSchema.extend({
   purchasePrice: z.number().int().nonnegative().optional(),
   clause: z.number().int().nonnegative().optional(),
   shieldedUntil: z.string().optional(),
+  shieldDays: z.number().int().nonnegative().optional(),
   onMarket: z.boolean(),
   askPrice: z.number().int().nonnegative().optional(),
 })

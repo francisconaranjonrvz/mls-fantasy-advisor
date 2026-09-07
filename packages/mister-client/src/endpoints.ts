@@ -69,14 +69,45 @@ export interface BalanceInfo {
   maxDebt: Euros
 }
 
+/**
+ * Un jugador tal cual lo devuelve /ajax/sw/players.
+ *
+ * Los nombres estan sacados del servidor, no de la documentacion de la
+ * comunidad, que aqui se equivoca: no hay ninguna clave `owner` ni `team`.
+ * El dueno es `id_uc` y el club es `id_team`, y leerlos mal no rompia la
+ * ingesta, solo la dejaba sin senal: 523 jugadores sin dueno y sin club.
+ */
 export interface RawPlayerRecord {
   id?: number | string
   name?: string
   value?: number | string
+  /** Valor en la actualizacion anterior. La diferencia da la tendencia. */
+  prev_value?: number | string
   points?: number | string
+  /** 1 GK, 2 DF, 3 MF, 4 FW. */
   position?: number | string
-  owner?: number | string
-  team?: unknown
+  /** Media por jornada. */
+  avg?: number | string
+  /** Puntuaciones recientes, de la mas antigua a la mas nueva. */
+  streak?: unknown
+  /** Id del club real. 0 o ausente = ya no esta en LaLiga. */
+  id_team?: number | string
+  /** Id del manager de la liga que lo posee. null = agente libre. */
+  id_uc?: number | string | null
+  /** Nombre del manager que lo posee. */
+  uc_name?: string | null
+  /** null cuando esta sano; "injury", "doubt", "sanction"... cuando no. */
+  status?: string | null
+  /** Clausula de rescision vigente, para CUALQUIER jugador de la liga. */
+  clause?: number | string
+  /** Dias de blindaje que le quedan. 0 = se le puede pagar la clausula. */
+  shield?: number | string
+  /** Id del anuncio si esta listado en el mercado. */
+  id_market?: number | string | null
+  /** 1 si es tuyo. */
+  is_mine?: number | string
+  /** Proximo partido. */
+  match_info?: { is_home?: boolean; rival_team_id?: number } | null
   [k: string]: unknown
 }
 

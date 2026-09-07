@@ -4,11 +4,11 @@ import {
   parseFeedTransfers, feedTransfersToTransactions,
   readClause, readPurchasePrice,
 } from '@mls/mister-client'
-import { MLS_LEAGUE, parseEuros } from '@mls/core'
+import { MLS_LEAGUE, parseEuros, POSITION_BY_CODE } from '@mls/core'
 import type {
-  LeagueSnapshot, Manager, Player, Transaction, MarketEntry,
+  LeagueSnapshot, Manager, Player, PlayerStatus, Transaction, MarketEntry,
 } from '@mls/core'
-import type { BalanceInfo } from '@mls/mister-client'
+import type { BalanceInfo, RawPlayerRecord } from '@mls/mister-client'
 import type { ScraperConfig } from './config.ts'
 
 /**
@@ -136,9 +136,22 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   log(`${members.length} miembros en la liga`)
 
   let players: Player[] = []
+  let catalogRaw: RawPlayerRecord[] = []
   try {
-    players = (await api.getAllPlayers()).map(normalizePlayer).filter((p): p is Player => p !== null)
-    log(`catalogo con ${players.length} jugadores`)
+    catalogRaw = await api.getAllPlayers()
+    players = catalogRaw.map(normalizePlayer).filter((p): p is Player => p !== null)
+    const conDueno = players.filter((p) => p.ownerId !== undefined).length
+    const enLaLiga = players.filter((p) => p.hasTeam).length
+    log(`catalogo con ${players.length} jugadores (${conDueno} con dueno, ${enLaLiga} en LaLiga)`)
+    // Estos tres contadores existen porque los tres campos han estado rotos en
+    // silencio. Si vuelven a salir a cero, se ve aqui y no tres capas mas
+    // abajo en forma de diagnostico sin senal.
+    if (players.length > 0 && conDueno === 0) {
+      warn('ningun jugador del catalogo tiene dueno: la clave de propiedad ha cambiado')
+    }
+    if (players.length > 0 && enLaLiga === 0) {
+      warn('ningun jugador del catalogo tiene club: la clave de equipo ha cambiado')
+    }
   } catch (err) {
     warn(`no se pudo leer el catalogo de jugadores: ${String(err)}`)
   }
@@ -203,6 +216,22 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     )
   }
 
+  // El catalogo manda sobre el HTML: trae estado, racha y proximo rival para
+  // todos los jugadores, y el HTML de plantilla no.
+  if (players.length > 0) {
+    const cruzados = mergeCatalogIntoSquads(managers, players)
+    const conClausula = mergeClausesFromCatalog(managers, catalogRaw)
+    const enPlantillas = managers.reduce((a, m) => a + m.squad.length, 0)
+    log(`catalogo cruzado con ${cruzados}/${enPlantillas} jugadores de plantilla`)
+    log(`clausula conocida para ${conClausula} jugadores`)
+    if (enPlantillas > 0 && cruzados < enPlantillas * 0.8) {
+      warn(`solo ${cruzados} de ${enPlantillas} jugadores de plantilla estan en el catalogo`)
+    }
+  }
+
+  // Ya solo queda por pedir el precio de compra, que es el unico dato que el
+  // catalogo no trae y hace falta para calcular lo que cuesta subir una
+  // clausula. Se pide jugador a jugador, asi que va con presupuesto.
   const enrichedCount = await enrichClauses(api, managers, selfId, config, warn)
 
   // El libro de movimientos NO esta en el HTML de /feed, como sugiere la
@@ -331,13 +360,19 @@ async function enrichClauses(
       const info = await api.getCommunityPlayerInfo(player.id)
       const clause = readClause(info)
       const purchase = readPurchasePrice(info)
-      if (clause !== undefined) player.clause = clause
+      // La clausula del catalogo es la buena; esta solo cubre huecos.
+      if (clause !== undefined && player.clause === undefined) player.clause = clause
       if (purchase !== undefined) player.purchasePrice = purchase
       if (info.market && info.market.id !== undefined) {
         player.onMarket = true
         if (typeof info.market.price === 'number') player.askPrice = info.market.price
       }
-      if (info.injury) player.status = 'injured'
+      // Ojo: `injury` llega como array vacio para los jugadores sanos, y en
+      // JavaScript [] es truthy. Escrito como `if (info.injury)` marcaba
+      // lesionada a la plantilla entera, y con ello el once esperado se iba a
+      // cero puntos. El estado autoritativo es el del catalogo; esto solo
+      // rellena si alli no habia nada.
+      if (hasInjury(info.injury) && player.status === 'ok') player.status = 'injured'
       done++
     } catch (err) {
       failures++
@@ -360,28 +395,145 @@ async function enrichClauses(
   return done
 }
 
-/** Normaliza un registro crudo del catalogo. Devuelve null si no es utilizable. */
-function normalizePlayer(raw: Record<string, unknown>): Player | null {
-  const id = Number(raw['id'])
+/**
+ * Decide si el campo `injury` del detalle indica una lesion de verdad.
+ *
+ * Mister lo devuelve como array: vacio si el jugador esta sano, con entradas
+ * si no. Un array vacio es truthy, asi que comprobarlo a secas da siempre que
+ * si. Ha pasado: los catorce jugadores de la plantilla salian lesionados.
+ */
+export function hasInjury(injury: unknown): boolean {
+  if (Array.isArray(injury)) return injury.length > 0
+  if (injury && typeof injury === 'object') return Object.keys(injury).length > 0
+  return Boolean(injury)
+}
+
+/**
+ * Traduce el campo `status` del catalogo.
+ *
+ * Viene a null cuando el jugador esta sano, asi que la ausencia es informacion,
+ * no un fallo. Se aceptan las variantes que Mister usa segun la vista.
+ */
+export function normalizeStatus(raw: unknown): PlayerStatus {
+  const v = String(raw ?? '').toLowerCase()
+  if (!v || v === 'null' || v === 'ok') return 'ok'
+  if (v.includes('injur') || v.includes('lesion')) return 'injured'
+  if (v.includes('doubt') || v.includes('duda')) return 'doubt'
+  if (v.includes('sanction') || v.includes('sancion')) return 'sanctioned'
+  if (v.includes('quit') || v.includes('no_team')) return 'no_team'
+  return 'unknown'
+}
+
+/**
+ * Normaliza un registro crudo del catalogo. Devuelve null si no es utilizable.
+ *
+ * Los nombres de clave estan verificados contra el servidor (workflow
+ * "Sondeo de endpoints"). Antes se leian `owner` y `team`, que no existen, y
+ * el resultado era un catalogo de 523 jugadores en el que ninguno tenia dueno
+ * ni club. Nada fallaba en rojo: el motor simplemente se quedaba ciego.
+ */
+export function normalizePlayer(raw: RawPlayerRecord): Player | null {
+  const id = Number(raw.id)
   if (!Number.isFinite(id) || id <= 0) return null
-  const name = String(raw['name'] ?? '').trim()
+  const name = String(raw.name ?? '').trim()
   if (!name) return null
 
-  const positions = { '1': 'GK', '2': 'DF', '3': 'MF', '4': 'FW' } as const
-  const posCode = String(raw['position'] ?? '3') as keyof typeof positions
-  const ownerRaw = Number(raw['owner'])
+  const posCode = String(raw.position ?? '3')
+  const owner = Number(raw.id_uc)
+  const club = Number(raw.id_team)
+  const value = Math.round(Number(raw.value ?? 0))
+  const prev = Math.round(Number(raw.prev_value ?? 0))
 
-  return {
+  // La racha llega de la jornada mas antigua a la mas reciente; el resto del
+  // codigo la quiere al reves, con lo ultimo primero.
+  const streak = Array.isArray(raw.streak)
+    ? [...raw.streak].map((n) => Math.round(Number(n))).filter((n) => Number.isFinite(n)).reverse()
+    : undefined
+
+  const fixture = raw.match_info
+  const player: Player = {
     id,
     name,
-    position: positions[posCode] ?? 'MF',
-    // team a null significa que el jugador ya no esta en LaLiga: no puntuara.
-    hasTeam: raw['team'] !== null && raw['team'] !== undefined,
-    value: Math.round(Number(raw['value'] ?? 0)),
-    points: Math.round(Number(raw['points'] ?? 0)),
-    status: 'ok',
-    ownerId: Number.isFinite(ownerRaw) && ownerRaw > 0 ? ownerRaw : undefined,
+    position: POSITION_BY_CODE[posCode] ?? 'MF',
+    // id_team a 0 o ausente significa que el jugador ya no esta en LaLiga.
+    hasTeam: Number.isFinite(club) && club > 0,
+    value,
+    points: Math.round(Number(raw.points ?? 0)),
+    status: normalizeStatus(raw.status),
+    ownerId: Number.isFinite(owner) && owner > 0 ? owner : undefined,
   }
+  if (streak && streak.length > 0) player.streak = streak
+  if (Number.isFinite(Number(raw.avg))) player.average = Number(raw.avg)
+  if (prev > 0 && value !== prev) player.trend = value > prev ? 'up' : 'down'
+  else if (prev > 0) player.trend = 'flat'
+  if (fixture && typeof fixture.rival_team_id === 'number') {
+    player.nextFixture = { rivalTeamId: fixture.rival_team_id, isHome: fixture.is_home === true }
+  }
+  return player
+}
+
+/**
+ * Vuelca sobre las plantillas todo lo que el catalogo ya sabe.
+ *
+ * El catalogo trae clausula, blindaje, estado, racha y proximo rival para los
+ * 523 jugadores de la liga de una sola peticion. Las plantillas vienen de HTML,
+ * que de eso solo trae una parte y peor. Cruzarlos por id deja el analisis
+ * completo sin gastar una peticion por jugador.
+ */
+export function mergeCatalogIntoSquads(managers: Manager[], catalog: Player[]): number {
+  const byId = new Map(catalog.map((p) => [p.id, p]))
+  let matched = 0
+
+  for (const manager of managers) {
+    for (const player of manager.squad) {
+      const cat = byId.get(player.id)
+      if (!cat) continue
+      matched++
+      player.hasTeam = cat.hasTeam
+      player.status = cat.status
+      if (cat.value > 0) player.value = cat.value
+      if (cat.points !== 0 || player.points === 0) player.points = cat.points
+      if (cat.streak) player.streak = cat.streak
+      if (cat.average !== undefined) player.average = cat.average
+      if (cat.trend) player.trend = cat.trend
+      if (cat.nextFixture) player.nextFixture = cat.nextFixture
+    }
+  }
+  return matched
+}
+
+/**
+ * Clausula y blindaje directamente del catalogo.
+ *
+ * Es el hallazgo que hace barato el motor de riesgo: `clause` y `shield` vienen
+ * para TODOS los jugadores en la misma respuesta paginada, no solo para los que
+ * daba tiempo a consultar uno a uno.
+ */
+export function mergeClausesFromCatalog(managers: Manager[], raw: RawPlayerRecord[]): number {
+  const byId = new Map<number, RawPlayerRecord>()
+  for (const r of raw) {
+    const id = Number(r.id)
+    if (Number.isFinite(id) && id > 0) byId.set(id, r)
+  }
+
+  let done = 0
+  for (const manager of managers) {
+    for (const player of manager.squad) {
+      const r = byId.get(player.id)
+      if (!r) continue
+      const clause = Math.round(Number(r.clause ?? 0))
+      if (clause > 0) {
+        player.clause = clause
+        done++
+      }
+      const shield = Math.round(Number(r.shield ?? 0))
+      if (Number.isFinite(shield) && shield > 0) player.shieldDays = shield
+      if (r.id_market !== null && r.id_market !== undefined && r.id_market !== '') {
+        player.onMarket = true
+      }
+    }
+  }
+  return done
 }
 
 /**

@@ -27,10 +27,27 @@ export interface Player {
   status: PlayerStatus
   /** Tendencia del valor en la ultima actualizacion. */
   trend?: 'up' | 'down' | 'flat' | undefined
-  /** Racha de puntuaciones recientes (mas reciente primero). */
+  /**
+   * Puntuaciones de las ultimas jornadas, la mas reciente primero.
+   *
+   * Es la unica serie temporal que Mister da gratis para los 523 jugadores, y
+   * con la temporada recien empezada vale mas que el acumulado: dice cuantas
+   * jornadas ha jugado de verdad y con que regularidad.
+   */
   streak?: number[] | undefined
+  /** Media por jornada segun Mister. */
+  average?: number | undefined
+  /** Proximo partido, para saber si la racha recibe rival facil o dificil. */
+  nextFixture?: NextFixture | undefined
   /** Id del manager de la liga que lo posee. undefined = agente libre. */
   ownerId?: number | undefined
+}
+
+/** El partido que le toca al jugador en la jornada que viene. */
+export interface NextFixture {
+  /** Id del equipo rival en la nomenclatura de Mister. */
+  rivalTeamId: number
+  isHome: boolean
 }
 
 export interface OwnedPlayer extends Player {
@@ -41,6 +58,13 @@ export interface OwnedPlayer extends Player {
   clause?: Euros | undefined
   /** ISO. Mientras no se alcance, el jugador esta blindado (7 dias tras fichaje). */
   shieldedUntil?: string | undefined
+  /**
+   * Dias de blindaje que le quedan segun Mister (campo `shield` del catalogo).
+   *
+   * Es dato directo, no inferido de la fecha de fichaje, asi que manda sobre
+   * `shieldedUntil` cuando ambos existen.
+   */
+  shieldDays?: number | undefined
   onMarket: boolean
   askPrice?: Euros | undefined
 }
