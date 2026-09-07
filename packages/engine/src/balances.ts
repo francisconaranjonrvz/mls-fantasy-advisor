@@ -100,8 +100,21 @@ export interface ManagerLedger {
    * dejaba el intervalo de todos los rivales pegado a cero por abajo.
    */
   maxClauseSpend?: Euros | undefined
+  /**
+   * Suelo de ese mismo gasto. Con el precio de compra conocido no es cero, y
+   * eso estrecha el intervalo tambien por arriba, no solo por abajo.
+   */
+  minClauseSpend?: Euros | undefined
   /** Puesto en cada jornada cerrada. Da la bonificacion exacta. */
   jornadaRanks?: { jornada: number; rank: number }[] | undefined
+  /**
+   * Cuantas bonificaciones de jornada se han cobrado ya.
+   *
+   * Mister paga con retraso: la progresion listaba cuatro jornadas puntuadas
+   * cuando en el libro solo habia dos bonificaciones. Sin acotarlo, la
+   * reconstruccion le regalaba dos millones a cada rival.
+   */
+  paidBonusCount?: number | undefined
   /** Jornadas en las que puntuo: prueba de que no estaba en negativo. */
   scoredJornadas?: number[] | undefined
   /** Valor medio del once alineado, para acotar salarios si estuvieran activos. */
@@ -111,12 +124,29 @@ export interface ManagerLedger {
 const sumBy = (txs: Transaction[], pred: (t: Transaction) => boolean): Euros =>
   txs.filter(pred).reduce((acc, t) => acc + t.amount, 0)
 
-/** Suma las bonificaciones deterministas segun el puesto de cada jornada. */
+/**
+ * Suma las bonificaciones deterministas segun el puesto de cada jornada.
+ *
+ * `paidCount` acota cuantas se han cobrado ya. Hace falta porque la
+ * progresion lista las jornadas PUNTUADAS y Mister paga con retraso: contra la
+ * cuenta real habia cuatro jornadas puntuadas y solo dos bonificaciones en el
+ * libro, dos millones de diferencia que la reconstruccion a ciegas se apuntaba
+ * de mas a cada rival.
+ *
+ * El numero de pagos es el mismo para los diez, asi que se cuenta en el libro
+ * propio, que es exacto, y se aplica a todos.
+ */
 export function bonusesFromRanks(
   ranks: { jornada: number; rank: number }[],
   config: LeagueConfig,
+  paidCount?: number,
 ): Euros {
-  return ranks.reduce((acc, r) => {
+  // Se pagan en orden, asi que las cobradas son las mas antiguas.
+  const cobradas = paidCount === undefined
+    ? ranks
+    : [...ranks].sort((a, b) => a.jornada - b.jornada).slice(0, Math.max(0, paidCount))
+
+  return cobradas.reduce((acc, r) => {
     const idx = Math.min(Math.max(r.rank, 1), config.jornadaRankBonus.length) - 1
     return acc + (config.jornadaRankBonus[idx] ?? 0)
   }, 0)
@@ -241,7 +271,7 @@ export function reconstructBalance(
     clauseAdjustments: sumBy(txs, (t) => t.type === 'clause_change'),
     loans: sumBy(txs, (t) => t.type === 'loan_purchase' || t.type === 'loan_sale'),
     bonuses: ledger.jornadaRanks
-      ? bonusesFromRanks(ledger.jornadaRanks, config)
+      ? bonusesFromRanks(ledger.jornadaRanks, config, ledger.paidBonusCount)
       : sumBy(txs, (t) => t.type === 'bonus'),
     // El saldo inicial acreditado por Mister no se suma aqui: ya esta contado
     // en initialCash. Sumarlo otra vez duplicaria los doce millones y medio
@@ -312,8 +342,10 @@ export function reconstructBalance(
     }
     // Lo que pudo gastar en clausulas sin que se vea. Si se conocen sus
     // clausulas, la cota sale de ellas y es mucho mas estrecha que suponer una
-    // fraccion del valor del equipo.
+    // fraccion del valor del equipo. Y con el precio de compra tambien hay
+    // suelo, asi que el intervalo se cierra por los dos lados.
     low -= ledger.maxClauseSpend ?? Math.round(ledger.teamValue * 0.4)
+    high -= ledger.minClauseSpend ?? 0
   }
 
   const constraintsApplied: string[] = []

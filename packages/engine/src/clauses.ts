@@ -181,11 +181,38 @@ export function maxClauseSpend(
   return Math.max(0, Math.round(CLAUSE_EXCHANGE_RATE * (player.clause - 1.5 * base)))
 }
 
+/**
+ * Lo MINIMO que pudo costar subir la clausula de un jugador.
+ *
+ * La cota superior usa la base de hoy, y eso sobreestima cuando el jugador se
+ * ha revalorizado: la clausula sube con el valor por el ratchet, pero el
+ * desembolso se hizo sobre la base de aquel dia, que era menor. Contra la
+ * plantilla real la diferencia era medio millon.
+ *
+ * La base nunca baja del precio de compra, asi que ese es el suelo. Con el
+ * precio delante la horquilla se queda en un 10% del importe; sin el, el
+ * minimo es cero y solo queda la cota de arriba.
+ */
+export function minClauseSpend(
+  player: { clause?: Euros | undefined; value: Euros; purchasePrice?: Euros | undefined },
+): Euros {
+  const compra = player.purchasePrice ?? 0
+  if (!player.clause || compra <= 0) return 0
+  return Math.max(0, Math.round(CLAUSE_EXCHANGE_RATE * (player.clause - 1.5 * compra)))
+}
+
 /** La misma cota para una plantilla entera. */
 export function maxClauseSpendForSquad(
   squad: { clause?: Euros | undefined; value: Euros; purchasePrice?: Euros | undefined }[],
 ): Euros {
   return squad.reduce((acc, p) => acc + maxClauseSpend(p), 0)
+}
+
+/** Suelo del gasto en clausulas de una plantilla entera. */
+export function minClauseSpendForSquad(
+  squad: { clause?: Euros | undefined; value: Euros; purchasePrice?: Euros | undefined }[],
+): Euros {
+  return squad.reduce((acc, p) => acc + minClauseSpend(p), 0)
 }
 
 /** Un jugador esta blindado si su ventana de 7 dias post-fichaje sigue abierta. */

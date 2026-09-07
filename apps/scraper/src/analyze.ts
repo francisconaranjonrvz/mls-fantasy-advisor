@@ -7,7 +7,7 @@ import {
   buildValuationContext, reconstructBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
   optimizeLineup, bestSubstitution, auditHistory, rankMarketBuys, observedInitialCash,
-  maxClauseSpendForSquad,
+  maxClauseSpendForSquad, minClauseSpendForSquad,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
   type Calibration, type HistoryAudit,
 } from '@mls/engine'
@@ -208,6 +208,13 @@ export function analyze(
   const jornadasPlayed = valuation.jornadasPlayed
   const segunLaPagina = Math.max(0, snapshot.currentJornada - 1)
 
+  // Cuantas bonificaciones de jornada se han pagado de verdad. Se cuenta en el
+  // libro propio, que es exacto, y vale para los diez: Mister paga a todos a la
+  // vez. La progresion lista las jornadas PUNTUADAS, que van por delante.
+  const bonosPagados = transactions.filter(
+    (t) => t.type === 'bonus' && t.managerId === snapshot.selfId,
+  ).length
+
   // De quien se han visto cobros de quiniela en el feed. Sin esto habria que
   // seguir tratandola como incognita aunque los apuntes ya esten en el libro.
   const quinielaVista = new Set(
@@ -247,7 +254,9 @@ export function analyze(
         // Con el puesto de cada jornada, la bonificacion deja de ser un rango
         // de 1,0M a 1,5M por jornada y pasa a ser una cifra exacta.
         jornadaRanks: ranksByManager.get(m.id),
+        paidBonusCount: bonosPagados > 0 ? bonosPagados : undefined,
         maxClauseSpend: maxClauseSpendForSquad(m.squad),
+        minClauseSpend: minClauseSpendForSquad(m.squad),
         initialSquadValue: initialSquadValue(m.id),
         // Sin baseline declarado, se le supone el reparto que se observo en la
         // cuenta propia. Es una suposicion y el intervalo lo dice.
@@ -328,7 +337,9 @@ export function analyze(
       {
         managerId: self.id,
         jornadaRanks: ranksByManager.get(self.id),
+        paidBonusCount: bonosPagados > 0 ? bonosPagados : undefined,
         maxClauseSpend: maxClauseSpendForSquad(self.squad),
+        minClauseSpend: minClauseSpendForSquad(self.squad),
         transactions: feedSelfTransactions,
         historyComplete: feedComplete,
         quinielaObserved: feedSelfTransactions.some((t) => t.type === 'quiniela'),

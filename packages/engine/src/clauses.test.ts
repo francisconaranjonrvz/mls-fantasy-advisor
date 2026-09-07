@@ -4,6 +4,7 @@ import {
   clauseBase, defaultClause, clauseForTier, tierCost, upgradeCost,
   cheapestTierAbove, effectiveClause, refundOnLowering,
   maxClauseSpend, maxClauseSpendForSquad, maxAffordableTier,
+  minClauseSpend, minClauseSpendForSquad,
   CLAUSE_EXCHANGE_RATE, CLAUSE_FLOOR, CLAUSE_TIERS,
 } from './clauses.ts'
 
@@ -184,5 +185,44 @@ describe('el tramo maximo', () => {
   it('es el tercero, que triplica la base', () => {
     expect(maxAffordableTier(M(10))).toBe(3)
     expect(clauseForTier(M(10), 3)).toBe(M(30))
+  })
+})
+
+describe('suelo del gasto en clausulas', () => {
+  /**
+   * La cota superior usa la base de HOY, y eso sobreestima cuando el jugador
+   * se ha revalorizado: la clausula sube con el valor por el ratchet, pero el
+   * desembolso se hizo sobre la base de aquel dia, que era menor. Contra la
+   * plantilla real la diferencia entre lo derivado y lo que dice el libro era
+   * de medio millon.
+   *
+   * Como la base nunca baja del precio de compra, ese es el suelo.
+   */
+  it('con el precio de compra, la horquilla se cierra por los dos lados', () => {
+    // Comprado por 3,3M, hoy vale 4,2M y su clausula esta al doble: tramo 1.
+    // Costo entre 0,2 x 3,3M y 0,2 x 4,2M.
+    const p = { value: M(4.2), clause: M(8.4), purchasePrice: M(3.3) }
+    expect(minClauseSpend(p)).toBe(Math.round(0.4 * (M(8.4) - 1.5 * M(3.3))))
+    expect(maxClauseSpend(p)).toBe(Math.round(0.4 * (M(8.4) - 1.5 * M(4.2))))
+    expect(minClauseSpend(p)).toBeGreaterThan(maxClauseSpend(p) - M(1))
+  })
+
+  it('sin precio de compra el suelo es cero, que es lo unico que se puede decir', () => {
+    expect(minClauseSpend({ value: M(10), clause: M(20) })).toBe(0)
+  })
+
+  it('el que tiene la clausula por defecto no gasto nada, por ninguno de los dos lados', () => {
+    const p = { value: M(10), clause: M(15), purchasePrice: M(10) }
+    expect(minClauseSpend(p)).toBe(0)
+    expect(maxClauseSpend(p)).toBe(0)
+  })
+
+  it('suma la plantilla entera', () => {
+    const squad = [
+      { value: M(4.2), clause: M(8.4), purchasePrice: M(3.3) },
+      { value: M(10), clause: M(15), purchasePrice: M(10) },
+    ]
+    expect(minClauseSpendForSquad(squad)).toBe(minClauseSpend(squad[0]!))
+    expect(maxClauseSpendForSquad(squad)).toBe(maxClauseSpend(squad[0]!))
   })
 })
