@@ -1,5 +1,6 @@
 import {
   MisterHttp, MisterEndpoints, authenticate, describeHtml, describeStructure,
+  parseStandingsMembers,
 } from '@mls/mister-client'
 import { loadConfig } from './config.ts'
 
@@ -63,6 +64,62 @@ async function main(): Promise<void> {
       const msg = err instanceof Error ? err.message.split('\n')[0] : String(err)
       console.log(`  FALLA /ajax/sw/${recurso}  ${sanea(msg ?? '')}`)
     }
+  }
+
+  console.log('')
+  console.log('='.repeat(72))
+  console.log('FICHA DE UN RIVAL: QUE PUBLICA /ajax/sw/users DE VERDAD')
+  console.log('(solo nombres de clave y tipos; ningun valor economico)')
+  console.log('='.repeat(72))
+  try {
+    const miembros = parseStandingsMembers(await api.getStandingsHtml())
+    const rival = miembros[1] ?? miembros[0]
+    if (!rival) {
+      console.log('  no hay miembros que consultar')
+    } else {
+      const detalle = await api.getManager(rival.id)
+      const describe = (obj: unknown, prefijo: string, prof = 0): void => {
+        if (!obj || typeof obj !== 'object' || prof > 2) return
+        for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+          const tipo = v === null ? 'null' : Array.isArray(v) ? `array(${v.length})` : typeof v
+          console.log(`    ${prefijo}${k}: ${tipo}`)
+          if (v && typeof v === 'object' && !Array.isArray(v) && prof < 2) {
+            describe(v, `${prefijo}${k}.`, prof + 1)
+          }
+        }
+      }
+      describe(detalle, '')
+    }
+  } catch (err) {
+    console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
+  }
+
+  console.log('')
+  console.log('='.repeat(72))
+  console.log('QUE TIPOS DE TARJETA HAY EN EL FEED, Y HASTA CUANDO LLEGA')
+  console.log('(interesa si publica el reparto inicial de plantillas: eso daria')
+  console.log(' el valor de la plantilla de salida de los diez, que hoy se supone)')
+  console.log('='.repeat(72))
+  try {
+    const feedHtml = await api.getFeedHtml()
+    const shape = describeHtml(feedHtml, ['.card', '[class*="card-"]'], 60)
+    console.log(`  ${shape.bytes} bytes`)
+    console.log('  clases mas frecuentes:')
+    for (const c of shape.topClasses) {
+      if (c.name.includes('card') || c.name.includes('feed') || c.name.includes('item')) {
+        console.log(`     ${String(c.count).padStart(4)}  ${c.name}`)
+      }
+    }
+    // Titulares de las tarjetas: dicen que clase de evento publica el feed.
+    const titulares = new Set<string>()
+    for (const m of feedHtml.matchAll(/<div class="title[^"]*">([^<]{2,60})</g)) {
+      titulares.add(sanea(m[1] ?? ''))
+    }
+    for (const m of feedHtml.matchAll(/<h[23][^>]*>([^<]{2,60})</g)) titulares.add(sanea(m[1] ?? ''))
+    console.log(`  titulares distintos (${titulares.size}):`)
+    for (const t of [...titulares].slice(0, 25)) console.log(`     ${t}`)
+  } catch (err) {
+    console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
   }
 
   console.log('')
