@@ -36,6 +36,15 @@ export interface IngestResult {
   transactions: Transaction[]
   /** Movimientos de rivales, del feed en JSON, con fecha e importe exactos. */
   rivalTransactions: Transaction[]
+  /**
+   * Tus propios apuntes segun el FEED, no segun tu libro de balance.
+   *
+   * Sirven para la unica verificacion que de verdad prueba el metodo:
+   * reconstruir tu saldo usando solo lo que se ve de un rival y compararlo con
+   * el saldo real. La calibracion habitual usa tu libro, asi que prueba la
+   * aritmetica pero no el metodo.
+   */
+  feedSelfTransactions: Transaction[]
   /** Si el feed llego al principio de temporada. Decide si el saldo es exacto. */
   feedComplete: boolean
   balance: BalanceInfo | null
@@ -288,6 +297,11 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   // completo y su saldo deja de ser una estimacion. Si no llega, hay que
   // seguir tratandolo como estimacion aunque casi todo cuadre.
   let feedComplete = false
+  // Los apuntes del feed que te implican a TI. No entran en el analisis, que
+  // para uno mismo usa el libro de balance, pero son la unica forma de probar
+  // que el metodo aplicado a los rivales funciona: se reconstruye tu saldo con
+  // ellos, a ciegas, y se compara con el real.
+  let feedSelfTransactions: Transaction[] = []
   try {
     const { items, complete } = await api.getAllFeed()
     feedComplete = complete
@@ -317,6 +331,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     // es autoritativo y trae el saldo resultante de cada apunte.
     rivalTransactions = todos.filter((t) => t.managerId !== selfId)
     const propios = todos.filter((t) => t.managerId === selfId)
+    feedSelfTransactions = propios
     log(`${todos.length} apuntes del feed, ${rivalTransactions.length} de rivales`)
 
     if (todos.length === 0) {
@@ -378,6 +393,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     snapshot,
     transactions,
     rivalTransactions,
+    feedSelfTransactions,
     feedComplete,
     balance,
     progression,

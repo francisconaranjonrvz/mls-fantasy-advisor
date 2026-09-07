@@ -165,6 +165,7 @@ export function buildDemoSnapshot(): DemoData {
     balance: { balance: saldo, future: saldo, maxDebt: saldo + M(30), history: [] },
     // La demo simula el caso bueno: historial completo desde el reparto.
     feedComplete: true,
+    feedSelfTransactions: [],
     // Progresion sintetica: diez jornadas cerradas y un puesto por manager en
     // cada una, para que la demo ejercite tambien las bonificaciones exactas.
     progression: {

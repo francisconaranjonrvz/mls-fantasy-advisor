@@ -48,8 +48,17 @@ export interface Diagnosis {
     pointsToLeader: number
   }
   rivals: RivalView[]
-  /** Contraste de la reconstruccion contra tu saldo real. */
+  /** Contraste de la reconstruccion contra tu saldo real, usando tu libro. */
   calibration: Calibration | null
+  /**
+   * El mismo contraste pero usando SOLO lo que se ve de un rival: el feed, la
+   * regla del reparto y los puestos por jornada, sin tocar tu libro de
+   * balance.
+   *
+   * Es la unica verificacion que prueba el metodo en vez de la aritmetica. Si
+   * esta cuadra, los saldos rivales son de fiar; si no, dice cuanto falta.
+   */
+  blindCalibration: Calibration | null
   /**
    * Auditoria del libro de movimientos contra su propio saldo resultante.
    *
@@ -158,6 +167,8 @@ export function analyze(
    * rivales esta completo y su saldo deja de ser una estimacion.
    */
   feedComplete = false,
+  /** Tus apuntes segun el feed, para la verificacion a ciegas. */
+  feedSelfTransactions: Transaction[] = [],
 ): Diagnosis {
   const config = MLS_LEAGUE
 
@@ -300,6 +311,36 @@ export function analyze(
     }
   }
 
+  // --- La verificacion que de verdad prueba el metodo ---
+  //
+  // La calibracion de arriba reconstruye tu saldo con TU libro, que trae el
+  // saldo resultante de cada apunte. Eso prueba que la aritmetica cuadra, pero
+  // no prueba nada del metodo que se aplica a los rivales, porque de ellos no
+  // se tiene ese libro.
+  //
+  // Esta reconstruye tu saldo usando SOLO lo que se ve de un rival: el feed,
+  // la regla del reparto y los puestos por jornada. Si coincide con el saldo
+  // real, el metodo esta demostrado. Si no, la diferencia dice exactamente
+  // cuanto falta y por donde.
+  let blindCalibration: Calibration | null = null
+  if (self && self.balance !== undefined && feedSelfTransactions.length > 0) {
+    const aCiegas = reconstructBalance(
+      {
+        managerId: self.id,
+        jornadaRanks: ranksByManager.get(self.id),
+        maxClauseSpend: maxClauseSpendForSquad(self.squad),
+        transactions: feedSelfTransactions,
+        historyComplete: feedComplete,
+        quinielaObserved: feedSelfTransactions.some((t) => t.type === 'quiniela'),
+        teamValue: self.teamValue,
+        averageLineupValue: Math.round(self.teamValue * 0.6),
+        scoredJornadas: self.points > 0 ? [jornadasPlayed] : [],
+      },
+      config,
+    )
+    blindCalibration = calibrate(aCiegas, self.balance)
+  }
+
   const rivalCapacities: RivalCapacity[] = rivalsRaw.map((m) => {
     const view = rivals.find((r) => r.managerId === m.id)!
     return {
@@ -437,6 +478,7 @@ export function analyze(
     },
     rivals: rivals.sort((a, b) => b.threatCapacity - a.threatCapacity),
     calibration,
+    blindCalibration,
     historyAudit: audit
       ? {
           checked: audit.checked,

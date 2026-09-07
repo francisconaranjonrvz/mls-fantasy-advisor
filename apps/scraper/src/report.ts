@@ -100,6 +100,30 @@ export function renderDiagnosis(d: Diagnosis): string {
   )
   L.push('')
 
+  // --- La verificacion a ciegas ---
+  if (d.blindCalibration) {
+    const b = d.blindCalibration
+    L.push('## Fiabilidad de los saldos rivales')
+    L.push('')
+    L.push(
+      'Tu saldo reconstruido usando **solo lo que se ve de un rival** (el feed, la regla del ' +
+      'reparto y los puestos por jornada), sin mirar tu libro de balance:',
+    )
+    L.push('')
+    L.push(
+      b.error === 0
+        ? `- Coincide **exactamente** con tu saldo real. El metodo aplicado a los rivales esta ` +
+          'demostrado, no supuesto.'
+        : `- Se desvia ${formatShort(b.error)} (${b.errorPct.toFixed(1)}%). Los saldos rivales ` +
+          'arrastran un error de ese orden.',
+    )
+    L.push(
+      `- ${b.withinInterval ? 'El saldo real cae dentro del intervalo estimado.' :
+        'El saldo real queda FUERA del intervalo estimado, asi que el intervalo engaña.'}`,
+    )
+    L.push('')
+  }
+
   // --- Amenazas ---
   const enPeligro = d.threats.filter(
     (t) => accionSobreClausula(t.advice.action) || t.advice.action === 'imposible',
@@ -287,6 +311,15 @@ export function renderConsoleSummary(d: Diagnosis): string {
   L.push(`  Lastre a vender: ${d.deadweight.length}`)
   if (d.calibration) {
     L.push(`  Calibracion: ${d.calibration.error === 0 ? 'exacta' : 'con desviacion'}`)
+  }
+  if (d.blindCalibration) {
+    // La cifra que de verdad importa: si el metodo aplicado a los rivales
+    // reproduce tu saldo sin mirar tu libro, los saldos rivales valen.
+    L.push(
+      `  Saldos rivales: ${d.blindCalibration.error === 0
+        ? 'metodo verificado a ciegas contra tu saldo real'
+        : `el metodo se desvia ${formatShort(d.blindCalibration.error)} al probarlo contigo`}`,
+    )
   }
   if (d.historyAudit) {
     L.push(

@@ -53,6 +53,7 @@ async function main(): Promise<void> {
 
   const {
     snapshot, transactions, rivalTransactions, warnings, progression, feedComplete,
+    feedSelfTransactions,
   } = result
 
   // --- Validacion antes de tocar el disco ---
@@ -96,6 +97,7 @@ async function main(): Promise<void> {
     baseline,
     progression,
     feedComplete,
+    feedSelfTransactions,
   )
   console.log('\n' + renderConsoleSummary(diagnosis) + '\n')
 
