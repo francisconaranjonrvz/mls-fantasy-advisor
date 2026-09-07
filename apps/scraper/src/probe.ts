@@ -1,6 +1,6 @@
 import {
   MisterHttp, MisterEndpoints, authenticate, describeHtml, describeStructure,
-  parseStandingsMembers,
+  parseStandingsMembers, describeFeedCards,
 } from '@mls/mister-client'
 import { loadConfig } from './config.ts'
 
@@ -64,6 +64,67 @@ async function main(): Promise<void> {
       const msg = err instanceof Error ? err.message.split('\n')[0] : String(err)
       console.log(`  FALLA /ajax/sw/${recurso}  ${sanea(msg ?? '')}`)
     }
+  }
+
+  console.log('')
+  console.log('='.repeat(72))
+  console.log('COMO SE PAGINA EL FEED')
+  console.log('(con fetch plano salen ~17 tarjetas; con scroll, cientos. Aqui se')
+  console.log(' busca la peticion que el navegador hace al bajar del todo)')
+  console.log('='.repeat(72))
+  try {
+    const base = await api.getFeedHtml()
+    const cuenta = (html: string) => (html.match(/class="[^"]*card-transfer/g) ?? []).length
+    console.log(`  /feed tal cual: ${base.length} bytes, ${cuenta(base)} tarjetas de traspaso`)
+
+    // Los scripts de la pagina son la pista mas directa: uno de ellos
+    // implementa el scroll infinito y lleva dentro la ruta que pide mas.
+    const scripts = [...base.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1] ?? '')
+    console.log(`  scripts de la pagina (${scripts.length}):`)
+    for (const src of scripts) console.log(`     ${sanea(src)}`)
+
+    // Marcadores de scroll infinito en el propio HTML.
+    for (const marca of ['data-next', 'data-page', 'data-offset', 'data-last', 'load-more',
+      'loadMore', 'js-more', 'infinite', 'data-url']) {
+      const n = (base.match(new RegExp(marca, 'g')) ?? []).length
+      if (n > 0) console.log(`     marcador "${marca}": ${n} veces`)
+    }
+
+    console.log('')
+    console.log('  probando parametros de paginacion en GET /feed:')
+    for (const q of ['?page=2', '?p=2', '?offset=20', '?start=20', '?page=1&offset=20']) {
+      try {
+        const html = await http.fetchPage(`/feed${q}`)
+        console.log(`     ${q.padEnd(20)} ${String(html.length).padStart(7)} bytes, ${cuenta(html)} tarjetas`)
+      } catch (err) {
+        console.log(`     ${q.padEnd(20)} FALLA ${sanea(err instanceof Error ? err.message : String(err))}`)
+      }
+    }
+
+    console.log('')
+    console.log('  probando endpoints AJAX candidatos:')
+    for (const ruta of ['/ajax/news', '/ajax/feed', '/ajax/activity', '/ajax/timeline',
+      '/ajax/community-news', '/ajax/sw/timeline', '/ajax/sw/gameweek', '/ajax/sw/news']) {
+      try {
+        const res = await http.postForm<unknown>(ruta, { offset: 20, page: 2 })
+        const txt = JSON.stringify(res)
+        console.log(`     ${ruta.padEnd(24)} OK  ${sanea(txt).slice(0, 100)}`)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)
+        console.log(`     ${ruta.padEnd(24)} ${sanea(msg ?? '').slice(0, 60)}`)
+      }
+    }
+
+    console.log('')
+    console.log('  cabecera de una tarjeta, en claro (hace falta para sacar la FECHA;')
+    console.log('  aqui no hay nombres de rivales ni importes, solo el titulo):')
+    describeFeedCards(base, 3).forEach((c, i) => {
+      console.log(
+        `     [${i}] id="${c.id || '(sin id)'}"  strong="${c.strong}"  em=${JSON.stringify(c.ems)}`,
+      )
+    })
+  } catch (err) {
+    console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
   }
 
   console.log('')

@@ -506,6 +506,34 @@ export function describeStructure(
   return out
 }
 
+/**
+ * Cabecera de las primeras tarjetas del feed.
+ *
+ * Sirve para una sola cosa: averiguar donde esta la FECHA de un traspaso. Hoy
+ * todos los apuntes de rivales se sellan con la hora del snapshot, asi que no
+ * se pueden acumular entre ejecuciones sin duplicarlos, y sin acumularlos no
+ * hay historial completo.
+ *
+ * Devuelve el id de la tarjeta y los textos de su titulo, que no contienen ni
+ * nombres de rivales ni importes: esos van en el cuerpo, no en la cabecera.
+ */
+export function describeFeedCards(
+  html: string,
+  limit = 3,
+): { id: string; strong: string; ems: string[] }[] {
+  const $ = cheerio.load(html)
+  const out: { id: string; strong: string; ems: string[] }[] = []
+
+  $('.card-transfer').slice(0, limit).each((_i, el) => {
+    out.push({
+      id: $(el).attr('id') ?? '',
+      strong: $(el).find('.title strong').first().text().trim(),
+      ems: $(el).find('.title em').map((_j, e) => $(e).text().trim()).get(),
+    })
+  })
+  return out
+}
+
 // ---------------------------------------------------------------------------
 // Feed de actividad: traspasos entre managers
 // ---------------------------------------------------------------------------
