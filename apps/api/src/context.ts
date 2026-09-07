@@ -158,7 +158,7 @@ export async function loadLeagueData(env: WorkerEnv): Promise<LeagueData> {
   }
 
   return {
-    diagnosis: (await latestRes.json()) as DiagnosisShape,
+    diagnosis: (await latestRes.json()),
     rules: rulesRes.ok ? await rulesRes.text() : '',
   }
 }

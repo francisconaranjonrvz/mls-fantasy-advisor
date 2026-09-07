@@ -56,7 +56,7 @@ async function main(): Promise<void> {
     try {
       const res = await http.postForm<unknown>(`/ajax/sw/${recurso}`, { post: recurso })
       const json = JSON.stringify(res)
-      const claves = res && typeof res === 'object' ? Object.keys(res as object).join(', ') : '-'
+      const claves = res && typeof res === 'object' ? Object.keys(res).join(', ') : '-'
       console.log(`  OK   /ajax/sw/${recurso}  claves=[${claves}]`)
       console.log(`       ${sanea(json)}`)
     } catch (err) {

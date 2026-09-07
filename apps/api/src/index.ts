@@ -76,7 +76,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
 
   let body: { message?: unknown; history?: unknown }
   try {
-    body = (await request.json()) as typeof body
+    body = (await request.json())
   } catch {
     return json({ error: 'El cuerpo debe ser JSON' }, 400)
   }

@@ -415,7 +415,12 @@ export function hasInjury(injury: unknown): boolean {
  * no un fallo. Se aceptan las variantes que Mister usa segun la vista.
  */
 export function normalizeStatus(raw: unknown): PlayerStatus {
-  const v = String(raw ?? '').toLowerCase()
+  // Solo se interpretan cadenas. Si Mister devolviera un objeto, convertirlo a
+  // texto daria "[object Object]", que no casa con nada y saldria 'unknown':
+  // parece prudente pero oculta un cambio de formato. Mejor declararlo asi.
+  if (raw === null || raw === undefined) return 'ok'
+  if (typeof raw !== 'string') return 'unknown'
+  const v = raw.toLowerCase()
   if (!v || v === 'null' || v === 'ok') return 'ok'
   if (v.includes('injur') || v.includes('lesion')) return 'injured'
   if (v.includes('doubt') || v.includes('duda')) return 'doubt'

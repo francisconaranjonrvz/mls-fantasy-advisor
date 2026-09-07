@@ -73,11 +73,14 @@ export class NvidiaProvider implements LlmProvider {
       throw new LlmError(`NVIDIA respondio ${res.status}`, res.status, body.slice(0, 300))
     }
 
-    const data = (await res.json()) as {
-      choices?: { message?: { content?: string } }[]
-    }
+    const data: OpenAiChatResponse = await res.json()
     return stripReasoning(data.choices?.[0]?.message?.content ?? '')
   }
+}
+
+/** Respuesta compatible con OpenAI, que es la que sirve NVIDIA. */
+interface OpenAiChatResponse {
+  choices?: { message?: { content?: string } }[]
 }
 
 /**

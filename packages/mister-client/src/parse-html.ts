@@ -468,7 +468,7 @@ export function describeStructure(
       )
 
       if (depth < maxDepth) {
-        $n.children().each((_j, child) => walk(child as Element, depth + 1))
+        $n.children().each((_j, child) => walk(child, depth + 1))
       }
     }
 

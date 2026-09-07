@@ -40,7 +40,13 @@ export function writeText(path: string, text: string): void {
 }
 
 const escapeCsv = (v: unknown): string => {
-  const s = v === null || v === undefined ? '' : String(v)
+  // Un objeto en una celda seria "[object Object]", que es un dato corrupto
+  // escrito en silencio. Mejor volcarlo como JSON y que se vea.
+  const s =
+    v === null || v === undefined ? ''
+    : typeof v === 'string' ? v
+    : typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint' ? String(v)
+    : JSON.stringify(v) ?? ''
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 

@@ -3,11 +3,11 @@ import {
   type LeagueSnapshot, type Transaction, type Euros, type Player,
 } from '@mls/core'
 import {
-  buildValuationContext, reconstructBalance, exactBalance, spendingCapacity,
+  buildValuationContext, reconstructBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
   optimizeLineup, bestSubstitution, auditHistory, marketBenchmark,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
-  type Calibration, type LineupPlan, type SubstitutionAdvice, type HistoryAudit,
+  type Calibration, type HistoryAudit,
 } from '@mls/engine'
 
 /**

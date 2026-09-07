@@ -135,7 +135,7 @@ function tryParseJson(text: string | null): PlaywrightStorageState | null {
   if (!trimmed.startsWith('{')) return null
   try {
     const parsed: unknown = JSON.parse(trimmed)
-    return parsed && typeof parsed === 'object' ? (parsed as PlaywrightStorageState) : null
+    return parsed && typeof parsed === 'object' ? (parsed) : null
   } catch {
     return null
   }

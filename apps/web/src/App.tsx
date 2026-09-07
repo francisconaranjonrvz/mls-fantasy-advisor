@@ -173,7 +173,7 @@ export function App() {
             <>
               El listón: hoy el punto más barato del mercado abierto es{' '}
               <b>{data.market.playerName}</b> a {fmt(data.market.price ?? 0)}, o sea{' '}
-              <b>{fmt(Math.round(data.market.bestCostPerPoint!))} por punto</b>. Un clausulazo
+              <b>{fmt(Math.round(data.market.bestCostPerPoint))} por punto</b>. Un clausulazo
               solo compensa si baja de esa cifra.
             </>
           ) : (
