@@ -329,12 +329,17 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
 }
 
 /**
- * Rellena clausula y precio de compra llamando al detalle por jugador.
+ * Rellena el precio de compra llamando al detalle por jugador.
  *
- * Es la parte cara: una peticion por jugador. El presupuesto se gasta primero
- * en tu plantilla, porque sin conocer tus propias clausulas no hay analisis de
- * riesgo posible, y despues en los rivales empezando por los que mas puntuan
- * por millon, que son los candidatos naturales a clausulazo.
+ * Es la parte cara de la ingesta: una peticion por jugador, con espera entre
+ * ellas para no castigar a Mister. Desde que la clausula viene en el catalogo,
+ * lo unico que hay que pedir aqui es el precio de compra, y ese solo hace
+ * falta para la plantilla propia: es la base con la que se calcula lo que
+ * cuesta subir una clausula, y las clausulas ajenas no se suben.
+ *
+ * De los rivales solo se piden los pocos a los que el catalogo no les dio
+ * clausula, para no quedarse sin ese dato. La cola pasa asi de ciento
+ * veintiocho peticiones a poco mas de quince.
  */
 async function enrichClauses(
   api: MisterEndpoints,
@@ -347,6 +352,9 @@ async function enrichClauses(
   const rivals = managers
     .filter((m) => m.id !== selfId)
     .flatMap((m) => m.squad)
+    // Solo los huecos: si el catalogo ya dio la clausula, no hay nada que
+    // preguntar sobre un jugador que nunca vas a proteger.
+    .filter((p) => p.clause === undefined)
     .sort((a, b) => b.points / Math.max(1, b.value) - a.points / Math.max(1, a.value))
 
   const queue = [...own, ...rivals]
@@ -391,7 +399,7 @@ async function enrichClauses(
         'MAX_PLAYER_DETAILS; el resto usa la clausula por defecto estimada',
     )
   }
-  log(`clausulas leidas para ${done} jugadores (${failures} fallos)`)
+  log(`detalle pedido para ${done} jugadores (${failures} fallos, ${queue.length} en cola)`)
   return done
 }
 
