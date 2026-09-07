@@ -206,7 +206,7 @@ export function reconstructBalance(
     : hint !== undefined
       ? hint * (1 + HINTED_SQUAD_TOLERANCE)
       : config.initialBudget * INITIAL_SQUAD_VALUE_RANGE.max
-  if (!known0) {
+  if (!known0 && !txs.some((t) => t.type === 'seed')) {
     unknowns.push(
       hint !== undefined
         ? 'la plantilla inicial del rival se supone parecida a la propia, no es dato'
@@ -214,8 +214,15 @@ export function reconstructBalance(
     )
   }
 
+  // Si el libro llega hasta el principio de temporada, trae el apunte con el
+  // que Mister acredita la caja inicial. Entonces la caja de partida es cero y
+  // la aporta ese apunte: sumar ademas "presupuesto menos plantilla" contaria
+  // los mismos doce millones y medio dos veces.
+  const seed = sumBy(txs, (t) => t.type === 'seed')
+  const seedPresente = txs.some((t) => t.type === 'seed')
+
   const components: BalanceComponents = {
-    initialCash: config.initialBudget - initialSquadValue,
+    initialCash: seedPresente ? seed : config.initialBudget - initialSquadValue,
     purchases: sumBy(txs, (t) => t.type === 'purchase'),
     sales: sumBy(txs, (t) => t.type === 'sale'),
     clausePaid: sumBy(txs, (t) => t.type === 'buyout_signing'),
@@ -261,8 +268,14 @@ export function reconstructBalance(
   }
 
   // Mas plantilla inicial significa menos caja inicial: los extremos se cruzan.
-  let low = known + qLow + sLow + (config.initialBudget - initialSquadHigh) - components.initialCash
-  let high = known + qHigh + sHigh + (config.initialBudget - initialSquadLow) - components.initialCash
+  // Con el apunte de saldo inicial en el libro no hay nada que estimar: la caja
+  // de partida es dato, asi que ese termino no abre el intervalo.
+  let low = seedPresente
+    ? known + qLow + sLow
+    : known + qLow + sLow + (config.initialBudget - initialSquadHigh) - components.initialCash
+  let high = seedPresente
+    ? known + qHigh + sHigh
+    : known + qHigh + sHigh + (config.initialBudget - initialSquadLow) - components.initialCash
 
   if (!ledger.historyComplete) {
     // Lo que falta no es "todo": son las bonificaciones de jornada y las

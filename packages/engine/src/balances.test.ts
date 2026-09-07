@@ -303,6 +303,30 @@ describe('la caja inicial se lee, no se supone', () => {
     expect(observedInitialCash([tx('purchase', -M(3))])).toBeNull()
   })
 
+  it('con el apunte en el libro, la caja de partida es dato y no se estima', () => {
+    /**
+     * Es la regla que evita contar dos veces los mismos doce millones y medio.
+     * Si el libro trae el apunte de saldo inicial, la caja de partida la aporta
+     * el, y no hay que sumar ademas "presupuesto menos plantilla inicial".
+     */
+    const e = reconstructBalance(
+      {
+        managerId: 1,
+        historyComplete: true,
+        teamValue: M(50),
+        averageLineupValue: 0,
+        jornadaRanks: [],
+        transactions: [tx('seed', M(12.472)), tx('purchase', -M(3)), tx('sale', M(1))],
+      },
+      DETERMINISTIC,
+    )
+    expect(e.components.initialCash).toBe(M(12.472))
+    expect(e.estimate).toBe(M(12.472) - M(3) + M(1))
+    // Y sin nada que suponer sobre la plantilla inicial, el intervalo colapsa.
+    expect(e.low).toBe(e.high)
+    expect(e.unknowns.join(' ')).not.toMatch(/plantilla repartida/)
+  })
+
   it('la plantilla inicial supuesta estrecha mucho el intervalo del rival', () => {
     const comun = {
       managerId: 2,
