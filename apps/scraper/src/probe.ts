@@ -35,6 +35,24 @@ const SELECTORES = [
   '.type', '.reason', '.amount', '.player-pic', '.btn-bid',
 ]
 
+/**
+ * Vuelca las claves de un objeto con su tipo, y el VALOR solo de aquellas que
+ * no son contenido de la liga: identificadores, fechas y tipos. Los nombres de
+ * rivales y los importes de sus fichajes no pueden acabar en un log publico.
+ */
+const CLAVES_PUBLICABLES = ['id', 'type', 'kind', 'date', 'created', 'ts', 'time', 'gw', 'count']
+
+function volcarClaves(obj: Record<string, unknown>, sangria: string): void {
+  for (const [k, v] of Object.entries(obj)) {
+    const tipo = v === null ? 'null' : Array.isArray(v) ? `array(${v.length})` : typeof v
+    const publicable = CLAVES_PUBLICABLES.some((n) => k.toLowerCase().includes(n))
+    console.log(
+      `${sangria}${k.padEnd(22)} ${tipo.padEnd(12)}` +
+        `${publicable ? ' = ' + sanea(JSON.stringify(v) ?? '').slice(0, 60) : ''}`,
+    )
+  }
+}
+
 const sanea = (t: string) => t.replace(/\s+/g, ' ').trim().slice(0, MUESTRA)
 
 async function main(): Promise<void> {
@@ -98,7 +116,9 @@ async function main(): Promise<void> {
     const categorias = new Map<string, number>()
     let masAntigua = ''
     let masReciente = ''
-    let ejemploTraspaso: Record<string, unknown> | null = null
+    const ejemplos = new Map<string, Record<string, unknown>>()
+    const primeraOperacion = (clave: string): Record<string, unknown> | undefined =>
+      ejemplos.get(clave)
 
     const FECHA = /^\d{4}-\d{2}-\d{2}/
 
@@ -115,8 +135,19 @@ async function main(): Promise<void> {
           if (!masAntigua || fecha < masAntigua) masAntigua = fecha
           if (!masReciente || fecha > masReciente) masReciente = fecha
         }
-        if (!ejemploTraspaso && /transfer|traspaso|market|clause|clausula/i.test(cat)) {
-          ejemploTraspaso = it['data'] as Record<string, unknown> | null
+        // Las operaciones no estan en la entrada sino dentro de data, en
+        // listas: una tarjeta del feed agrupa varias del mismo momento.
+        const data = it['data']
+        if (data && typeof data === 'object') {
+          for (const clave of ['market', 'transfers']) {
+            const lista = (data as Record<string, unknown>)[clave]
+            if (Array.isArray(lista) && lista.length > 0 && !ejemplos.has(clave)) {
+              const primera = lista[0]
+              if (primera && typeof primera === 'object') {
+                ejemplos.set(clave, primera as Record<string, unknown>)
+              }
+            }
+          }
         }
       }
       if (page.end || page.items.length === 0) break
@@ -131,18 +162,20 @@ async function main(): Promise<void> {
       console.log(`     ${String(n).padStart(4)}  ${c}`)
     }
 
-    if (ejemploTraspaso) {
-      console.log('')
-      console.log('  campos de data en una entrada de traspaso:')
-      for (const [k, v] of Object.entries(ejemploTraspaso)) {
-        const tipo = v === null ? 'null' : Array.isArray(v) ? `array(${v.length})` : typeof v
-        const seguro = ['id', 'type', 'kind', 'date', 'created', 'ts', 'time', 'gw', 'count']
-        const mostrar = seguro.some((n) => k.toLowerCase().includes(n))
-        console.log(
-          `     ${k.padEnd(22)} ${tipo.padEnd(12)}` +
-            `${mostrar ? ' = ' + sanea(JSON.stringify(v)).slice(0, 60) : ''}`,
-        )
+    console.log('')
+    console.log('  UNA OPERACION POR DENTRO (data.market[] y data.transfers[]).')
+    console.log('  Solo se imprimen valores de identificadores y fechas: los')
+    console.log('  nombres e importes son justo lo que la liga mantiene privado.')
+    for (const [nombre, ejemplo] of [
+      ['data.market[0]', primeraOperacion('market')],
+      ['data.transfers[0]', primeraOperacion('transfers')],
+    ] as const) {
+      if (!ejemplo) {
+        console.log(`     ${nombre}: no encontrado`)
+        continue
       }
+      console.log(`     ${nombre}:`)
+      volcarClaves(ejemplo, '       ')
     }
   } catch (err) {
     console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
