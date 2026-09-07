@@ -116,9 +116,9 @@ async function main(): Promise<void> {
     const categorias = new Map<string, number>()
     let masAntigua = ''
     let masReciente = ''
+    // Un ejemplo de data por cada categoria, para verlas todas de una pasada
+    // en vez de gastar una ejecucion por categoria.
     const ejemplos = new Map<string, Record<string, unknown>>()
-    const primeraOperacion = (clave: string): Record<string, unknown> | undefined =>
-      ejemplos.get(clave)
 
     const FECHA = /^\d{4}-\d{2}-\d{2}/
 
@@ -135,18 +135,16 @@ async function main(): Promise<void> {
           if (!masAntigua || fecha < masAntigua) masAntigua = fecha
           if (!masReciente || fecha > masReciente) masReciente = fecha
         }
-        // Las operaciones no estan en la entrada sino dentro de data, en
-        // listas: una tarjeta del feed agrupa varias del mismo momento.
+        // Las operaciones no estan en la entrada sino dentro de data, y una
+        // tarjeta agrupa varias del mismo momento. Se guarda un ejemplo por
+        // categoria, prefiriendo uno cuyo data no venga vacio.
         const data = it['data']
-        if (data && typeof data === 'object') {
-          for (const clave of ['market', 'transfers']) {
-            const lista = (data as Record<string, unknown>)[clave]
-            if (Array.isArray(lista) && lista.length > 0 && !ejemplos.has(clave)) {
-              const primera = lista[0]
-              if (primera && typeof primera === 'object') {
-                ejemplos.set(clave, primera as Record<string, unknown>)
-              }
-            }
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+          const tieneAlgo = Object.values(data as Record<string, unknown>).some(
+            (v) => Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined,
+          )
+          if (tieneAlgo && !ejemplos.has(cat)) {
+            ejemplos.set(cat, data as Record<string, unknown>)
           }
         }
       }
@@ -163,19 +161,21 @@ async function main(): Promise<void> {
     }
 
     console.log('')
-    console.log('  UNA OPERACION POR DENTRO (data.market[] y data.transfers[]).')
+    console.log('  QUE LLEVA DENTRO CADA CATEGORIA.')
     console.log('  Solo se imprimen valores de identificadores y fechas: los')
     console.log('  nombres e importes son justo lo que la liga mantiene privado.')
-    for (const [nombre, ejemplo] of [
-      ['data.market[0]', primeraOperacion('market')],
-      ['data.transfers[0]', primeraOperacion('transfers')],
-    ] as const) {
-      if (!ejemplo) {
-        console.log(`     ${nombre}: no encontrado`)
-        continue
+    for (const [cat, data] of [...ejemplos].sort()) {
+      console.log('')
+      console.log(`     --- ${cat} ---`)
+      volcarClaves(data, '       ')
+      // Las operaciones van en listas dentro de data, asi que hay que abrir
+      // el primer elemento de cada una para ver la forma de verdad.
+      for (const [k, v] of Object.entries(data)) {
+        if (Array.isArray(v) && v.length > 0 && v[0] && typeof v[0] === 'object') {
+          console.log(`       ${k}[0]:`)
+          volcarClaves(v[0] as Record<string, unknown>, '         ')
+        }
       }
-      console.log(`     ${nombre}:`)
-      volcarClaves(ejemplo, '       ')
     }
   } catch (err) {
     console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
