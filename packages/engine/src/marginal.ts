@@ -115,24 +115,43 @@ export function marketBenchmark(
   config: LeagueConfig,
   capacity: Euros,
 ): { costPerPoint: number; player?: Player | undefined; price?: Euros | undefined } {
+  const mejor = rankMarketBuys(offers, squad, ctx, config, capacity)[0]
+  if (!mejor) return { costPerPoint: Number.POSITIVE_INFINITY }
+  return { costPerPoint: mejor.costPerPoint, player: mejor.player, price: mejor.price }
+}
+
+export interface MarketBuy {
+  player: Player
+  price: Euros
+  gain: MarginalGain
+  costPerPoint: number
+}
+
+/**
+ * Las ofertas del mercado abierto que mejoran tu once, de la mas barata por
+ * punto a la mas cara.
+ *
+ * Es la respuesta a "a quien ficho hoy" cuando ningun clausulazo compensa, que
+ * con el mercado bien de precio es lo normal. Sin esta lista, el asesor se
+ * quedaba sin nada que decir justo cuando la respuesta era la mas facil.
+ */
+export function rankMarketBuys(
+  offers: { player: Player; price: Euros }[],
+  squad: OwnedPlayer[],
+  ctx: ValuationContext,
+  config: LeagueConfig,
+  capacity: Euros,
+): MarketBuy[] {
   const baseline = optimizeLineup(squad, ctx, config).best
-  let best = Number.POSITIVE_INFINITY
-  let bestPlayer: Player | undefined
-  let bestPrice: Euros | undefined
+  const out: MarketBuy[] = []
 
   for (const offer of offers) {
-    if (offer.price > capacity) continue
-    const cpp = costPerPoint(
-      offer.price,
-      marginalGain(offer.player, squad, ctx, config, baseline),
-    )
-    if (cpp < best) {
-      best = cpp
-      bestPlayer = offer.player
-      bestPrice = offer.price
-    }
+    if (offer.price > capacity || offer.price <= 0) continue
+    const gain = marginalGain(offer.player, squad, ctx, config, baseline)
+    if (gain.remaining <= 0) continue
+    out.push({ ...offer, gain, costPerPoint: costPerPoint(offer.price, gain) })
   }
-  return { costPerPoint: best, player: bestPlayer, price: bestPrice }
+  return out.sort((a, b) => a.costPerPoint - b.costPerPoint)
 }
 
 /**

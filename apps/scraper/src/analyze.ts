@@ -6,7 +6,7 @@ import {
 import {
   buildValuationContext, reconstructBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
-  optimizeLineup, bestSubstitution, auditHistory, marketBenchmark, observedInitialCash,
+  optimizeLineup, bestSubstitution, auditHistory, rankMarketBuys, observedInitialCash,
   maxClauseSpendForSquad,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
   type Calibration, type HistoryAudit,
@@ -84,6 +84,20 @@ export interface Diagnosis {
     bestCostPerPoint: number | null
     playerName: string | null
     price: Euros | null
+    /**
+     * Las mejores compras del mercado abierto, de la mas barata por punto a la
+     * mas cara. Es la respuesta a "a quien ficho" cuando ningun clausulazo
+     * compensa, que con el mercado bien de precio es lo habitual.
+     */
+    buys: {
+      playerId: number
+      name: string
+      position: string
+      price: Euros
+      pointsGained: number
+      costPerPoint: number
+      displaces: string | null
+    }[]
   }
   /** Parametros de la valoracion, para poder auditar de donde salen las cifras. */
   valuation: {
@@ -308,8 +322,11 @@ export function analyze(
   const ofertas = snapshot.market
     .map((e) => ({ player: playerById.get(e.playerId), price: e.price }))
     .filter((o): o is { player: Player; price: number } => o.player !== undefined && o.price > 0)
-  const benchmark = self
-    ? marketBenchmark(ofertas, self.squad, valuation, config, ownMaxSpend)
+  const compras = self
+    ? rankMarketBuys(ofertas, self.squad, valuation, config, ownMaxSpend)
+    : []
+  const benchmark = compras[0]
+    ? { costPerPoint: compras[0].costPerPoint, player: compras[0].player, price: compras[0].price }
     : { costPerPoint: Number.POSITIVE_INFINITY }
 
   const raidCtx = {
@@ -433,6 +450,15 @@ export function analyze(
       bestCostPerPoint: Number.isFinite(benchmark.costPerPoint) ? benchmark.costPerPoint : null,
       playerName: 'player' in benchmark ? (benchmark.player?.name ?? null) : null,
       price: 'price' in benchmark ? (benchmark.price ?? null) : null,
+      buys: compras.slice(0, 8).map((c) => ({
+        playerId: c.player.id,
+        name: c.player.name,
+        position: c.player.position,
+        price: c.price,
+        pointsGained: Math.round(c.gain.remaining * 10) / 10,
+        costPerPoint: Math.round(c.costPerPoint),
+        displaces: c.gain.displaces?.name ?? null,
+      })),
     },
     valuation: {
       jornadasPlayed: valuation.jornadasPlayed,

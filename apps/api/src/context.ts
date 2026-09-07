@@ -79,6 +79,14 @@ export interface DiagnosisShape {
     bestCostPerPoint: number | null
     playerName: string | null
     price: number | null
+    buys?: {
+      name: string
+      position: string
+      price: number
+      pointsGained: number
+      costPerPoint: number
+      displaces: string | null
+    }[]
   }
   valuation?: {
     jornadasPlayed: number
@@ -235,15 +243,26 @@ export function renderState(d: DiagnosisShape): string {
   }
 
   if (d.market) {
-    L.push('== EL LISTON: QUE CUESTA UN PUNTO EN EL MERCADO ABIERTO ==')
-    L.push(
-      d.market.bestCostPerPoint !== null
-        ? `Lo mas barato hoy es ${d.market.playerName} a ${fmt(d.market.price ?? 0)}, que sale a ` +
-          `${fmt(d.market.bestCostPerPoint)} por punto. Cualquier clausulazo por encima de esa ` +
-          'cifra es peor que pujar.'
-        : 'Hoy el mercado abierto no ofrece nada que mejore el once, asi que no hay alternativa ' +
+    L.push('== FICHAJES DEL MERCADO ABIERTO (ordenados por lo que cuesta el punto) ==')
+    if (d.market.bestCostPerPoint === null) {
+      L.push(
+        'Hoy el mercado abierto no ofrece nada que mejore el once, asi que no hay alternativa ' +
           'con la que comparar un clausulazo.',
-    )
+      )
+    } else {
+      L.push(
+        `El liston lo pone ${d.market.playerName} a ${fmt(d.market.price ?? 0)}: ` +
+          `${fmt(d.market.bestCostPerPoint)} por punto. Cualquier clausulazo mas caro que eso ` +
+          'es peor que pujar.',
+      )
+      for (const b of d.market.buys ?? []) {
+        L.push(
+          `${b.name} (${b.position}): pujar ${fmt(b.price)} te suma ${b.pointsGained} puntos ` +
+            `hasta final de temporada, a ${fmt(b.costPerPoint)} el punto` +
+            (b.displaces ? `, sentando a ${b.displaces}.` : ', rellenando un hueco del once.'),
+        )
+      }
+    }
     L.push('')
   }
 
@@ -300,6 +319,18 @@ olvidar:
 Cuando el usuario pida una recomendacion, se concreto: jugador, cifra y por que. Si el
 motor y tu criterio deportivo discrepan, dilo y explica la discrepancia en lugar de
 esconderla.
+
+Si te preguntan a quien fichar, mira en este orden y responde con el primero que aplique:
+1. Los clausulazos viables, si hay alguno.
+2. Si no hay ninguno, la mejor oferta del mercado abierto, que sale en el apartado del
+   liston. Que no haya clausulazos NO significa que no haya nada que hacer: significa que
+   pagar clausulas hoy sale mas caro que pujar.
+3. Si tampoco hay mercado aprovechable, di que hoy toca no gastar, y por que.
+Nunca contestes que "no hay informacion" a esa pregunta: siempre hay una respuesta, aunque
+sea no fichar a nadie.
+
+Cuidado con el tiempo verbal: las preguntas van sobre lo que conviene hacer HOY, no sobre
+lo que ya se hizo. "A quien ficho hoy" pregunta por una decision pendiente.
 
 ===== REGLAS DE LA LIGA =====
 ${data.rules}

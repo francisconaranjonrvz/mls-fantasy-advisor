@@ -169,6 +169,42 @@ export function App() {
       )}
 
       <section>
+        <h2>Fichajes del mercado abierto</h2>
+        {(data.market?.buys?.length ?? 0) === 0 ? (
+          <p className="empty">
+            Hoy el mercado no ofrece nada que mejore tu once con tu capacidad actual.
+          </p>
+        ) : (
+          <div className="tablebox">
+            <table>
+              <thead>
+                <tr>
+                  <th>Jugador</th>
+                  <th>Pos</th>
+                  <th className="num">Precio</th>
+                  <th className="num">Puntos que ganas</th>
+                  <th className="num">Coste por punto</th>
+                  <th>A quién sienta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.market.buys.map((b) => (
+                  <tr key={b.playerId}>
+                    <td>{b.name}</td>
+                    <td>{b.position}</td>
+                    <td className="num">{fmt(b.price)}</td>
+                    <td className="num"><b>{b.pointsGained.toFixed(0)}</b></td>
+                    <td className="num">{fmt(b.costPerPoint)}</td>
+                    <td>{b.displaces ?? 'hueco libre'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section>
         <h2>Clausulazos recomendados</h2>
         <p className="note">
           {data.market?.bestCostPerPoint !== null && data.market !== undefined ? (

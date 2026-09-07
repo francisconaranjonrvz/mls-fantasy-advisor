@@ -58,10 +58,21 @@ export interface Raid {
   }
 }
 
+export interface MarketBuy {
+  playerId: number
+  name: string
+  position: string
+  price: number
+  pointsGained: number
+  costPerPoint: number
+  displaces: string | null
+}
+
 export interface Market {
   bestCostPerPoint: number | null
   playerName: string | null
   price: number | null
+  buys: MarketBuy[]
 }
 
 export interface Valuation {
