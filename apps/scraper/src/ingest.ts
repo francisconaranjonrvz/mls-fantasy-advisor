@@ -323,6 +323,14 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     warn(`no se pudo leer el feed de actividad: ${String(err)}`)
   }
 
+  // El precio de compra que publica el feed es la base de la clausula de ese
+  // jugador. Sin el hay que suponer que su clausula alta se pago subiendola,
+  // y ese gasto que nunca existio ensancha el saldo estimado de su dueno.
+  if (rivalTransactions.length > 0) {
+    const conPrecio = applyFeedPurchasePrices(managers, rivalTransactions)
+    log(`precio de compra anotado desde el feed para ${conPrecio} jugadores rivales`)
+  }
+
   const snapshot: LeagueSnapshot = {
     takenAt: snapshotAt,
     seasonId: config.seasonId,
@@ -530,6 +538,46 @@ export function mergeCatalogIntoSquads(managers: Manager[], catalog: Player[]): 
     }
   }
   return matched
+}
+
+/**
+ * Anota el precio de compra de los jugadores que cambiaron de manos en el feed.
+ *
+ * Importa por una razon que no salta a la vista. La clausula se calcula sobre
+ * B = max(precio de compra, valor de mercado), asi que un jugador comprado caro
+ * tiene una clausula alta sin que su dueno haya pagado un euro por subirla. Sin
+ * saber el precio de compra hay que suponer que esa clausula alta SI se pago, y
+ * ese gasto invisible ensancha el intervalo de saldo del rival.
+ *
+ * Con el precio delante, la cota de gasto en clausulas de casi todos esos
+ * jugadores se va a cero, que es la verdad.
+ */
+export function applyFeedPurchasePrices(
+  managers: Manager[],
+  feedTransactions: Transaction[],
+): number {
+  // Del mas reciente al mas antiguo, para quedarnos con la ultima compra.
+  const compras = new Map<string, number>()
+  for (const t of feedTransactions) {
+    if (t.playerId === undefined) continue
+    if (t.type !== 'purchase' && t.type !== 'buyout_signing') continue
+    const precio = Math.abs(t.amount)
+    if (precio <= 0) continue
+    compras.set(`${t.managerId}:${t.playerId}`, precio)
+  }
+
+  let anotados = 0
+  for (const m of managers) {
+    for (const p of m.squad) {
+      const precio = compras.get(`${m.id}:${p.id}`)
+      // No se pisa un precio leido del detalle del jugador, que es mejor dato.
+      if (precio !== undefined && p.purchasePrice === undefined) {
+        p.purchasePrice = precio
+        anotados++
+      }
+    }
+  }
+  return anotados
 }
 
 /**

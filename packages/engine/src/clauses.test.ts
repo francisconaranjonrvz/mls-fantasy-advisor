@@ -151,6 +151,26 @@ describe('cuanto pudo gastar un rival en subir clausulas', () => {
     expect(maxClauseSpend({ value: M(10) })).toBe(0)
   })
 
+  it('con el precio de compra delante, al comprado caro no se le imputa gasto', () => {
+    /**
+     * Un jugador comprado por 20M cuyo valor de mercado esta hoy en 10M tiene
+     * clausula de 30M sin que su dueno haya pagado un euro por subirla: la
+     * base es el precio de compra, no el valor. Sin ese dato hay que suponer
+     * que se gasto 0,40 por cada euro de esos, seis millones que nunca
+     * existieron, y eso ensancha el saldo estimado de su dueno.
+     */
+    const comprado = { value: M(10), clause: M(30), purchasePrice: M(20) }
+    expect(maxClauseSpend(comprado)).toBe(0)
+
+    const { purchasePrice: _omitido, ...sinPrecio } = comprado
+    expect(maxClauseSpend(sinPrecio)).toBe(M(6))
+  })
+
+  it('sigue detectando la subida real aunque se sepa el precio de compra', () => {
+    // Comprado por 10M y ademas subido un tramo: clausula 20M en vez de 15M.
+    expect(maxClauseSpend({ value: M(8), clause: M(20), purchasePrice: M(10) })).toBe(M(2))
+  })
+
   it('suma la plantilla entera', () => {
     expect(maxClauseSpendForSquad([
       { value: M(10), clause: M(15) },

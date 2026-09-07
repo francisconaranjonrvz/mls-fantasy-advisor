@@ -166,14 +166,24 @@ export const CLAUSE_EFFECTIVE_RATE_IF_UNWOUND = CLAUSE_EXCHANGE_RATE * (1 - CLAU
  * entre 0,7M y 6,5M segun el rival, y esa diferencia se traduce entera en un
  * intervalo de saldo mas estrecho.
  */
-export function maxClauseSpend(player: { clause?: Euros | undefined; value: Euros }): Euros {
+export function maxClauseSpend(
+  player: { clause?: Euros | undefined; value: Euros; purchasePrice?: Euros | undefined },
+): Euros {
   if (!player.clause || player.clause <= 0) return 0
-  return Math.max(0, Math.round(CLAUSE_EXCHANGE_RATE * (player.clause - 1.5 * player.value)))
+  // Con el precio de compra conocido, la base es exacta y la cota se ajusta.
+  // Sin el hay que usar el valor de mercado, que es la cota inferior de la
+  // base, y entonces la cota de gasto sale mas alta de lo necesario.
+  //
+  // La diferencia no es teorica: a un jugador comprado caro le corresponde una
+  // clausula alta sin que su dueno haya pagado nada por subirla. Sin el precio
+  // hay que suponer que si la pago.
+  const base = Math.max(player.purchasePrice ?? 0, player.value)
+  return Math.max(0, Math.round(CLAUSE_EXCHANGE_RATE * (player.clause - 1.5 * base)))
 }
 
 /** La misma cota para una plantilla entera. */
 export function maxClauseSpendForSquad(
-  squad: { clause?: Euros | undefined; value: Euros }[],
+  squad: { clause?: Euros | undefined; value: Euros; purchasePrice?: Euros | undefined }[],
 ): Euros {
   return squad.reduce((acc, p) => acc + maxClauseSpend(p), 0)
 }
