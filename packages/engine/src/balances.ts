@@ -64,8 +64,8 @@ export interface BalanceEstimate {
 export interface ManagerLedger {
   managerId: number
   /**
-   * Valor de la plantilla repartida al empezar. Si no se conoce, se usa el
-   * rango plausible de INITIAL_SQUAD_VALUE_RANGE en lugar de un punto.
+   * Valor de la plantilla repartida al empezar. Si no se conoce, se aplica la
+   * regla del reparto de la liga con su margen, en lugar de un punto.
    */
   initialSquadValue?: Euros | undefined
   transactions: Transaction[]
@@ -114,30 +114,28 @@ export function bonusesFromRanks(
 }
 
 /**
- * Rango plausible del valor de la plantilla inicial, como fraccion del
- * presupuesto.
+ * Historia de como se ha ido acotando la plantilla inicial, que es el termino
+ * que mas ha ensanchado siempre la estimacion del saldo ajeno.
  *
- * Mister reparte 15 jugadores al azar y descuenta su valor de los 50M, asi que
- * la caja inicial es 50M menos eso. No es un valor libre: 15 jugadores de
- * LaLiga rondan la mitad del presupuesto, y el reparto aleatorio no produce
- * plantillas ni casi gratis ni casi de 50M.
+ * 1. Al principio se trataba como "no se nada" y se sumaba un margen de 25M a
+ *    cada lado. Cincuenta millones de intervalo: ningun rival llegaba a ser
+ *    amenaza cierta ni con su historial de traspasos delante.
+ * 2. Luego se acoto entre el 40% y el 75% del presupuesto, razonando que
+ *    quince jugadores de LaLiga no salen ni casi gratis ni por 50M. Diecisiete
+ *    millones y medio.
+ * 3. Al leer el libro propio aparecio el apunte del reparto: 12.472.000 sobre
+ *    50M, o sea el 24,944%. A 28.000 euros del 25% exacto, un 0,056% del
+ *    presupuesto, que es lo que cuesta cuadrar la plantilla con valores
+ *    enteros de jugador.
  *
- * Antes esto se trataba como "no se nada" y se sumaba un margen de 25M a cada
- * lado, un intervalo de 50M que se comia cualquier señal: ningun rival llegaba
- * a ser amenaza cierta ni con el historial de traspasos delante. Acotarlo a un
- * rango realista es lo que hace utiles las estimaciones.
+ * De ahi sale la regla que se usa hoy y que vive en la configuracion de la
+ * liga: Mister reparte plantilla por el 75% del presupuesto y acredita el 25%.
+ * El margen queda en un 2% del presupuesto, casi cuarenta veces la desviacion
+ * medida, porque una sola observacion no da para afinar mas. Dos millones de
+ * intervalo donde habia cincuenta.
+ *
+ * Ver `initialSquadPctOfBudget` en packages/core/src/league.ts.
  */
-export const INITIAL_SQUAD_VALUE_RANGE = { min: 0.4, max: 0.75 } as const
-
-/**
- * Margen alrededor de la plantilla inicial supuesta por analogia.
- *
- * El reparto inicial de Mister sale del mismo mecanismo para los diez, asi que
- * los valores deberian parecerse; un 20% cubre holgadamente la variacion sin
- * fingir que son identicos. Sigue siendo mucho mas estrecho que el 0,40-0,75
- * del presupuesto, que es lo unico que se podia decir sin ninguna observacion.
- */
-export const HINTED_SQUAD_TOLERANCE = 0.2
 
 /** Formato 1X2 sobre todos los partidos: como mucho 10 aciertos por jornada. */
 const MAX_QUINIELA_HITS_PER_JORNADA = 10
@@ -196,24 +194,25 @@ export function reconstructBalance(
   // Si no se conoce la plantilla inicial, se propaga como RANGO en lugar de
   // suponer un punto y ensanchar despues a bulto.
   const known0 = ledger.initialSquadValue !== undefined
-  const hint = ledger.initialSquadValueHint
-  const initialSquadValue =
-    ledger.initialSquadValue ?? hint ?? config.initialBudget * 0.5
-  const initialSquadLow = known0
-    ? initialSquadValue
-    : hint !== undefined
-      ? hint * (1 - HINTED_SQUAD_TOLERANCE)
-      : config.initialBudget * INITIAL_SQUAD_VALUE_RANGE.min
-  const initialSquadHigh = known0
-    ? initialSquadValue
-    : hint !== undefined
-      ? hint * (1 + HINTED_SQUAD_TOLERANCE)
-      : config.initialBudget * INITIAL_SQUAD_VALUE_RANGE.max
+
+  // La plantilla que reparte Mister vale una fraccion fija del presupuesto y
+  // el resto se acredita como saldo. Se prefiere la medida propia si la hay,
+  // porque incluye el redondeo real de esta liga, y si no, la regla.
+  const porRegla = config.initialBudget * config.initialSquadPctOfBudget
+  const centro = ledger.initialSquadValueHint ?? porRegla
+  const margen = config.initialBudget * config.initialSquadTolerance
+
+  const initialSquadValue = ledger.initialSquadValue ?? centro
+  const initialSquadLow = known0 ? initialSquadValue : centro - margen
+  const initialSquadHigh = known0 ? initialSquadValue : centro + margen
+
   if (!known0 && !txs.some((t) => t.type === 'seed')) {
     unknowns.push(
-      hint !== undefined
-        ? 'la plantilla inicial del rival se supone parecida a la propia, no es dato'
-        : 'no se conoce el valor exacto de la plantilla repartida al empezar',
+      `la plantilla inicial se toma de la regla del reparto (${Math.round(
+        config.initialSquadPctOfBudget * 100,
+      )}% del presupuesto) con un margen del ${Math.round(
+        config.initialSquadTolerance * 100,
+      )}%; es una regla observada una vez, no un dato de cada rival`,
     )
   }
 
@@ -327,7 +326,19 @@ export function reconstructBalance(
     }
   }
 
-  if (high < low) high = low
+  // Si las restricciones empujan la cota inferior por encima de la superior, es
+  // que alguna suposicion es falsa para este rival. Lo normal es que sea la de
+  // la plantilla inicial, que es la unica que no se mide en cada uno.
+  //
+  // Ante eso, ensanchar y decirlo, en vez de cerrar el intervalo por la fuerza
+  // y presentar como cierto un numero que la propia aritmetica contradice.
+  if (high < low) {
+    unknowns.push(
+      'las restricciones observadas contradicen la plantilla inicial supuesta para este rival: ' +
+        'se ensancha el intervalo en vez de dar por buena la suposicion',
+    )
+    high = low + Math.abs(high - low) + config.initialBudget * config.initialSquadTolerance * 2
+  }
 
   return {
     managerId: ledger.managerId,

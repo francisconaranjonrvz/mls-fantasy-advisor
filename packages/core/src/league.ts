@@ -44,6 +44,28 @@ export interface LeagueConfig {
 
   /** Presupuesto inicial total: valor de la plantilla repartida + saldo. */
   initialBudget: Euros
+  /**
+   * Fraccion del presupuesto que Mister entrega como PLANTILLA al empezar.
+   *
+   * El resto se acredita como saldo. No es una suposicion: en la cuenta real
+   * el apunte inicial fue de 12.472.000 sobre 50M, o sea el 24,944%. Que se
+   * quede a 28.000 euros del 25% exacto (un 0,056% del presupuesto) no es
+   * casualidad, es el redondeo de cuadrar la plantilla con valores enteros de
+   * jugador.
+   *
+   * Importa mucho porque el valor de la plantilla inicial de los rivales es el
+   * termino que mas ensancha la estimacion de su saldo: tres cuartas partes
+   * del ancho del intervalo salian de no saber esto.
+   */
+  initialSquadPctOfBudget: number
+  /**
+   * Margen alrededor de esa fraccion, tambien en fraccion del presupuesto.
+   *
+   * Generoso a proposito: la unica medida directa se desvia un 0,056% y aqui
+   * se admite casi cuarenta veces mas, porque una sola observacion no da para
+   * afinar. Aun asi deja el intervalo mucho mas estrecho que suponer a ojo.
+   */
+  initialSquadTolerance: number
   /** Jugadores aleatorios repartidos al empezar. */
   initialSquadSize: number
 
@@ -97,6 +119,8 @@ export const MLS_LEAGUE: LeagueConfig = {
   participants: 10,
 
   initialBudget: M(50),
+  initialSquadPctOfBudget: 0.75,
+  initialSquadTolerance: 0.02,
   initialSquadSize: 15,
 
   maxSquadSize: 24,

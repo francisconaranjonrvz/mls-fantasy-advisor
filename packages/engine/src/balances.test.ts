@@ -289,10 +289,22 @@ describe('intervalos acotados por las reglas, no a bulto', () => {
     expect(ahorro).toBeLessThanOrEqual((Math.max(...rango) - Math.min(...rango)) * 4)
   })
 
-  it('conocer la plantilla inicial estrecha el intervalo', () => {
+  it('la regla del reparto deja poco que ganar por conocer el dato exacto', () => {
+    /**
+     * Antes, no saber la plantilla inicial costaba diecisiete millones y medio
+     * de intervalo, porque lo unico que se podia decir era que valia entre el
+     * 40% y el 75% del presupuesto. Con la regla del reparto (75% del
+     * presupuesto, margen del 2%) ese termino baja a dos millones, asi que
+     * declarar el dato exacto ya casi no anade nada.
+     */
     const sinDato = reconstructBalance(rival, MLS_LEAGUE)
+    const margen = MLS_LEAGUE.initialBudget * MLS_LEAGUE.initialSquadTolerance * 2
+    expect(margen).toBeLessThanOrEqual(M(2))
+
+    // Y la incognita sigue declarandose, porque es una regla, no una medida.
+    expect(sinDato.unknowns.join(' ')).toMatch(/regla del reparto/)
     const conDato = reconstructBalance({ ...rival, initialSquadValue: M(30) }, MLS_LEAGUE)
-    expect(conDato.high - conDato.low).toBeLessThan(sinDato.high - sinDato.low)
+    expect(conDato.unknowns.join(' ')).not.toMatch(/regla del reparto/)
   })
 
   it('un historial completo estrecha mas todavia', () => {
@@ -349,25 +361,23 @@ describe('la caja inicial se lee, no se supone', () => {
     expect(e.unknowns.join(' ')).not.toMatch(/plantilla repartida/)
   })
 
-  it('la plantilla inicial supuesta estrecha mucho el intervalo del rival', () => {
+  it('la medida propia manda sobre la regla cuando existe', () => {
     const comun = {
       managerId: 2,
       transactions: [] as Transaction[],
       historyComplete: true,
       teamValue: M(50),
     }
-    const aCiegas = reconstructBalance(comun, MLS_LEAGUE)
-    const conSupuesto = reconstructBalance(
-      { ...comun, initialSquadValueHint: M(37.5) },
+    // Sin medida, se aplica la regla: 75% de plantilla, 25% de caja.
+    expect(reconstructBalance(comun, MLS_LEAGUE).estimate).toBe(M(12.5))
+
+    // Con la medida propia, ese numero manda, porque incluye el redondeo real
+    // de esta liga: la caja observada fueron 12.472.000, no 12.500.000.
+    const conMedida = reconstructBalance(
+      { ...comun, initialSquadValueHint: M(50) - 12_472_000 },
       MLS_LEAGUE,
     )
-
-    const anchoCiego = aCiegas.high - aCiegas.low
-    const anchoSupuesto = conSupuesto.high - conSupuesto.low
-    expect(anchoSupuesto).toBeLessThan(anchoCiego)
-    // Y el centro se mueve a donde dice la observacion, no al 50% del
-    // presupuesto, que era una eleccion sin fundamento.
-    expect(conSupuesto.estimate).toBe(M(12.5))
+    expect(conMedida.estimate).toBe(12_472_000)
   })
 
   it('el supuesto se declara como tal en las incognitas', () => {
@@ -376,8 +386,30 @@ describe('la caja inicial se lee, no se supone', () => {
         initialSquadValueHint: M(37.5) },
       MLS_LEAGUE,
     )
-    expect(est.unknowns.join(' ')).toMatch(/se supone parecida a la propia/)
+    expect(est.unknowns.join(' ')).toMatch(/regla del reparto/)
     expect(est.exact).toBe(false)
+  })
+
+  it('si las restricciones contradicen la regla, ensancha y lo dice', () => {
+    /**
+     * La regla se midio una sola vez. Si algun rival se comporta de forma
+     * incompatible con ella (paga algo que con esa caja no podria pagar), lo
+     * correcto es ensanchar el intervalo y decirlo, no cerrar el numero por la
+     * fuerza y presentarlo como cierto.
+     */
+    const imposible = reconstructBalance(
+      {
+        managerId: 9,
+        // Paga 60M teniendo, segun la regla, 12,5M de caja y 10M de margen.
+        transactions: [tx('buyout_signing', -M(60))],
+        historyComplete: true,
+        teamValue: M(40),
+        averageLineupValue: M(30),
+      },
+      MLS_LEAGUE,
+    )
+    expect(imposible.high).toBeGreaterThanOrEqual(imposible.low)
+    expect(imposible.unknowns.join(' ')).toMatch(/contradicen/)
   })
 
   it('un baseline declarado manda sobre el supuesto', () => {
