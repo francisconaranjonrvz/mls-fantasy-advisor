@@ -1,6 +1,6 @@
 import {
   MisterHttp, MisterEndpoints, authenticate, describeHtml, describeStructure,
-  parseStandingsMembers, describeFeedCards,
+  parseStandingsMembers,
 } from '@mls/mister-client'
 import { loadConfig } from './config.ts'
 
@@ -68,61 +68,60 @@ async function main(): Promise<void> {
 
   console.log('')
   console.log('='.repeat(72))
-  console.log('COMO SE PAGINA EL FEED')
-  console.log('(con fetch plano salen ~17 tarjetas; con scroll, cientos. Aqui se')
-  console.log(' busca la peticion que el navegador hace al bajar del todo)')
+  console.log('HASTA DONDE LLEGA EL FEED, Y QUE TRAE CADA ENTRADA')
+  console.log('(la pregunta que decide si el saldo rival puede ser exacto)')
   console.log('='.repeat(72))
   try {
-    const base = await api.getFeedHtml()
-    const cuenta = (html: string) => (html.match(/class="[^"]*card-transfer/g) ?? []).length
-    console.log(`  /feed tal cual: ${base.length} bytes, ${cuenta(base)} tarjetas de traspaso`)
+    const primera = await api.getFeedPage(0)
+    console.log(`  pagina 0: ${primera.items.length} entradas, end=${primera.end}`)
 
-    // Los scripts de la pagina son la pista mas directa: uno de ellos
-    // implementa el scroll infinito y lleva dentro la ruta que pide mas.
-    const scripts = [...base.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1] ?? '')
-    console.log(`  scripts de la pagina (${scripts.length}):`)
-    for (const src of scripts) console.log(`     ${sanea(src)}`)
-
-    // Marcadores de scroll infinito en el propio HTML.
-    for (const marca of ['data-next', 'data-page', 'data-offset', 'data-last', 'load-more',
-      'loadMore', 'js-more', 'infinite', 'data-url']) {
-      const n = (base.match(new RegExp(marca, 'g')) ?? []).length
-      if (n > 0) console.log(`     marcador "${marca}": ${n} veces`)
-    }
-
-    console.log('')
-    console.log('  probando parametros de paginacion en GET /feed:')
-    for (const q of ['?page=2', '?p=2', '?offset=20', '?start=20', '?page=1&offset=20']) {
-      try {
-        const html = await http.fetchPage(`/feed${q}`)
-        console.log(`     ${q.padEnd(20)} ${String(html.length).padStart(7)} bytes, ${cuenta(html)} tarjetas`)
-      } catch (err) {
-        console.log(`     ${q.padEnd(20)} FALLA ${sanea(err instanceof Error ? err.message : String(err))}`)
+    const muestra = primera.items[0]
+    if (muestra) {
+      console.log('  claves de una entrada:')
+      for (const [k, v] of Object.entries(muestra)) {
+        const tipo = v === null ? 'null' : Array.isArray(v) ? `array(${v.length})` : typeof v
+        // Solo se imprime el valor de lo que no es contenido de la liga:
+        // identificadores, tipos y fechas. Nada de nombres ni importes.
+        const seguro = ['id', 'type', 'kind', 'date', 'created', 'ts', 'time', 'gw']
+        const mostrar = seguro.some((n) => k.toLowerCase().includes(n))
+        console.log(`     ${k.padEnd(22)} ${tipo.padEnd(12)}${mostrar ? ' = ' + sanea(JSON.stringify(v)).slice(0, 50) : ''}`)
       }
     }
 
-    console.log('')
-    console.log('  probando endpoints AJAX candidatos:')
-    for (const ruta of ['/ajax/news', '/ajax/feed', '/ajax/activity', '/ajax/timeline',
-      '/ajax/community-news', '/ajax/sw/timeline', '/ajax/sw/gameweek', '/ajax/sw/news']) {
-      try {
-        const res = await http.postForm<unknown>(ruta, { offset: 20, page: 2 })
-        const txt = JSON.stringify(res)
-        console.log(`     ${ruta.padEnd(24)} OK  ${sanea(txt).slice(0, 100)}`)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)
-        console.log(`     ${ruta.padEnd(24)} ${sanea(msg ?? '').slice(0, 60)}`)
+    // Se pagina hacia atras hasta que el servidor diga que no hay mas. El
+    // limite existe para que un sondeo no se convierta en media hora de
+    // peticiones si el feed resultara ser mucho mas largo de lo esperado.
+    const MAX_PAGINAS = 40
+    let offset = 0
+    let total = 0
+    let paginas = 0
+    const tipos = new Map<string, number>()
+    let masAntigua = ''
+
+    for (let p = 0; p < MAX_PAGINAS; p++) {
+      const page = await api.getFeedPage(offset)
+      paginas++
+      total += page.items.length
+      for (const it of page.items) {
+        const bruto = it['type'] ?? it['kind']
+        const t = typeof bruto === 'string' || typeof bruto === 'number' ? String(bruto) : '?'
+        tipos.set(t, (tipos.get(t) ?? 0) + 1)
+        for (const clave of ['date', 'created_at', 'ts', 'adate']) {
+          const v = it[clave]
+          if (typeof v === 'string' && v && (!masAntigua || v < masAntigua)) masAntigua = v
+        }
       }
+      if (page.end || page.items.length === 0) break
+      offset += 20
     }
 
     console.log('')
-    console.log('  cabecera de una tarjeta, en claro (hace falta para sacar la FECHA;')
-    console.log('  aqui no hay nombres de rivales ni importes, solo el titulo):')
-    describeFeedCards(base, 3).forEach((c, i) => {
-      console.log(
-        `     [${i}] id="${c.id || '(sin id)'}"  strong="${c.strong}"  em=${JSON.stringify(c.ems)}`,
-      )
-    })
+    console.log(`  ${paginas} paginas recorridas, ${total} entradas en total`)
+    console.log(`  entrada mas antigua encontrada: ${masAntigua || '(sin campo de fecha)'}`)
+    console.log('  tipos de entrada:')
+    for (const [t, n] of [...tipos].sort((a, b) => b[1] - a[1])) {
+      console.log(`     ${String(n).padStart(4)}  ${t}`)
+    }
   } catch (err) {
     console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
   }

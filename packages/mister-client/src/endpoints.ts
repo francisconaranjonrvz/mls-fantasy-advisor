@@ -111,6 +111,27 @@ export interface RawPlayerRecord {
   [k: string]: unknown
 }
 
+/**
+ * Tamano de pagina del feed. El front usa el valor que le da el servidor en
+ * `_FG_data.feed.cardsPerPage`; veinte es lo que se observa en produccion y
+ * pedir mas no acelera nada porque el limite lo pone el servidor.
+ */
+export const FEED_PAGE_SIZE = 20
+
+/** Una entrada del feed tal cual la sirve /ajax/feed. */
+export interface RawFeedItem {
+  id?: number | string
+  id_community?: number | string
+  id_competition?: number | string | null
+  [k: string]: unknown
+}
+
+export interface FeedPage {
+  items: RawFeedItem[]
+  /** El servidor ya no tiene mas: se ha llegado al principio de temporada. */
+  end: boolean
+}
+
 export interface PlayersPage {
   players?: RawPlayerRecord[]
   owners?: unknown[]
@@ -294,6 +315,38 @@ export class MisterEndpoints {
   /** Feed de actividad. Con ancla #balance trae tu libro de movimientos. */
   getFeedHtml(): Promise<string> {
     return this.http.fetchPage('/feed')
+  }
+
+  /**
+   * Una pagina del feed de actividad, en JSON.
+   *
+   * Es la peticion que hace el navegador al llegar abajo del todo, y la clave
+   * para reconstruir el saldo ajeno como una suma en vez de como una
+   * estimacion: pidiendo paginas hacia atras se llega al principio de
+   * temporada, con lo que el historial de traspasos deja de estar cortado.
+   *
+   * Salio de leer el propio front: `load_more()` en views/feed.functions.js
+   * hace `$.ajax({url: 'ajax/feed', data: _FG_data.feed})`, y ese objeto
+   * lleva `offset` y `cardsPerPage`. Cuando se acaba, el servidor responde
+   * `status: 'end'` en vez de `ok`.
+   *
+   * Nada de esto aparece en /ajax/sw/*: probados news, feed, movements,
+   * activity, history, transfers y timeline, todos 404. El recurso vive en
+   * /ajax/feed a secas.
+   */
+  async getFeedPage(offset: number, cardsPerPage = FEED_PAGE_SIZE): Promise<FeedPage> {
+    const res = await this.http.postForm<AjaxEnvelope<RawFeedItem[]>>('/ajax/feed', {
+      offset,
+      cardsPerPage,
+      // El front manda su objeto de estado entero, con estos dos dentro.
+      loading: 'false',
+      end: 'false',
+    })
+    return {
+      items: Array.isArray(res.data) ? res.data : [],
+      // El front trata cualquier estado distinto de "ok" como fin del feed.
+      end: res.status !== 'ok',
+    }
   }
 }
 
