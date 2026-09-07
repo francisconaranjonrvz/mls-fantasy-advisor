@@ -4,7 +4,7 @@ import {
   clauseBase, defaultClause, clauseForTier, tierCost, upgradeCost,
   cheapestTierAbove, effectiveClause, refundOnLowering,
   maxClauseSpend, maxClauseSpendForSquad, maxAffordableTier,
-  minClauseSpend, minClauseSpendForSquad,
+  minClauseSpend, minClauseSpendForSquad, exactClauseSpend, exactClauseSpendForSquad,
   CLAUSE_EXCHANGE_RATE, CLAUSE_FLOOR, CLAUSE_TIERS,
 } from './clauses.ts'
 
@@ -224,5 +224,46 @@ describe('suelo del gasto en clausulas', () => {
     ]
     expect(minClauseSpendForSquad(squad)).toBe(minClauseSpend(squad[0]!))
     expect(maxClauseSpendForSquad(squad)).toBe(maxClauseSpend(squad[0]!))
+  })
+})
+
+describe('gasto en clausulas, exacto', () => {
+  /**
+   * La ficha del manager publica el multiplicador de cada clausula: 1,5 es la
+   * de por defecto y cada medio punto por encima es un tramo pagado. Con eso el
+   * gasto deja de ser una horquilla y pasa a ser una cifra.
+   *
+   * Es el caso real de Jan Oblak en la plantilla de paquete-fc: multiplicador
+   * 2 sobre una base de 10,03M, o sea un tramo, o sea 2,0M pagados.
+   */
+  it('multiplicador 1,5 es no haber pagado nada', () => {
+    expect(exactClauseSpend({ clauseMultiplier: 1.5, value: M(10) })).toBe(0)
+  })
+
+  it('cada medio punto es un tramo a 0,2 por la base', () => {
+    expect(exactClauseSpend({ clauseMultiplier: 2, value: M(10.03) })).toBe(Math.round(0.2 * M(10.03)))
+    expect(exactClauseSpend({ clauseMultiplier: 3, value: M(10) })).toBe(M(6))
+  })
+
+  it('la base es el precio de compra cuando supera al valor de mercado', () => {
+    expect(exactClauseSpend({ clauseMultiplier: 2, value: M(5), purchasePrice: M(8) })).toBe(M(1.6))
+  })
+
+  it('sin multiplicador no hay cifra exacta, y se dice', () => {
+    expect(exactClauseSpend({ value: M(10) })).toBeNull()
+  })
+
+  it('si falta el multiplicador de uno solo, la plantilla entera deja de ser exacta', () => {
+    // Media verdad aqui es peor que la horquilla: daria una cifra con pinta de
+    // exacta a la que le falta el gasto de un jugador.
+    expect(exactClauseSpendForSquad([
+      { clauseMultiplier: 2, value: M(10) },
+      { value: M(4) },
+    ])).toBeNull()
+
+    expect(exactClauseSpendForSquad([
+      { clauseMultiplier: 2, value: M(10) },
+      { clauseMultiplier: 1.5, value: M(4) },
+    ])).toBe(M(2))
   })
 })

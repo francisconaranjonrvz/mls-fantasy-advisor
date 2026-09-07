@@ -259,6 +259,16 @@ describe('fechas del feed', () => {
     expect(feedItemDate(TRASPASO)).toBe('2026-09-05T05:00:02.000Z')
   })
 
+  it('prefiere la marca absoluta cuando viene, aunque haya relativa', () => {
+    // Las entradas traen las dos: `created` absoluta y `date` relativa. Mirar
+    // primero la relativa hacia que nunca se usara la buena, y con precision
+    // de dias las compras y las ventas de una misma resolucion de mercado
+    // caian en dias distintos.
+    const item = { created: '2026-09-05 05:00:02', date: '2d' }
+    expect(feedItemDate(item, new Date('2026-09-07T18:00:00Z')))
+      .toBe('2026-09-05T05:00:02.000Z')
+  })
+
   it('entiende las relativas, que es como llega casi todo el feed', () => {
     /**
      * Esto no es cosmetica. Con la fecha vacia no se pueden ordenar los

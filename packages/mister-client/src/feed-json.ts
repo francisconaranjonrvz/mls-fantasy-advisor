@@ -124,7 +124,15 @@ const UNIDADES: Record<string, number> = {
  * El relativo es aproximado por definicion, pero para ordenar basta y sobra.
  */
 export function feedItemDate(item: RawFeedItem, now: Date = new Date()): string | undefined {
-  const raw = item['date'] ?? item['created']
+  // `created` PRIMERO, que es la marca absoluta ("2026-09-07 19:57:52").
+  // `date` es el relativo que se pinta en pantalla ("17m", "10d").
+  //
+  // Lo tenia al reves y el relativo siempre esta presente, asi que nunca
+  // llegaba a mirar el bueno. Con fechas aproximadas al dia, las compras y las
+  // ventas de una misma resolucion de mercado caian en dias distintos, y el
+  // recorrido del saldo mostraba minimos que nunca existieron: a paquete-fc le
+  // exigia 7,4M mas de caja inicial de la que necesito.
+  const raw = item['created'] ?? item['date']
   if (typeof raw !== 'string' || !raw.trim()) return undefined
 
   // Absoluta: "2026-09-07 05:00:01".

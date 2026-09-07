@@ -182,6 +182,43 @@ export function maxClauseSpend(
 }
 
 /**
+ * Lo que costo subir la clausula de un jugador, EXACTO.
+ *
+ * Solo se puede cuando Mister publica el multiplicador y la base, cosa que hace
+ * en la ficha del manager: 1,5 es la clausula por defecto y cada medio punto
+ * por encima es un tramo pagado, a 0,2 x base cada uno.
+ *
+ * Sin esos dos datos habia que deducir el tramo dividiendo la clausula entre
+ * una base que solo se conoce a medias, y el resultado era una horquilla. Con
+ * ellos es una cifra.
+ */
+export function exactClauseSpend(
+  player: { clauseMultiplier?: number | undefined; purchasePrice?: Euros | undefined; value: Euros },
+): Euros | null {
+  const m = player.clauseMultiplier
+  if (m === undefined || m <= 0) return null
+  const tramos = Math.max(0, Math.round((m - 1.5) / 0.5))
+  if (tramos === 0) return 0
+  const base = Math.max(player.purchasePrice ?? 0, player.value)
+  return Math.round(0.2 * base * tramos)
+}
+
+/** El gasto exacto de una plantilla, si se conoce el de todos sus jugadores. */
+export function exactClauseSpendForSquad(
+  squad: { clauseMultiplier?: number | undefined; purchasePrice?: Euros | undefined; value: Euros }[],
+): Euros | null {
+  let total = 0
+  for (const p of squad) {
+    const gasto = exactClauseSpend(p)
+    // Si falta el multiplicador de uno solo, el total deja de ser exacto y hay
+    // que volver a la horquilla: media verdad aqui es peor que la horquilla.
+    if (gasto === null) return null
+    total += gasto
+  }
+  return total
+}
+
+/**
  * Lo MINIMO que pudo costar subir la clausula de un jugador.
  *
  * La cota superior usa la base de hoy, y eso sobreestima cuando el jugador se

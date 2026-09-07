@@ -7,7 +7,8 @@ import {
   buildValuationContext, reconstructBalance, spendingCapacity,
   calibrate, assessSquad, planProtection, findRaidTargets, planRaids, findDeadweight,
   optimizeLineup, bestSubstitution, auditHistory, rankMarketBuys, observedInitialCash,
-  maxClauseSpendForSquad, minClauseSpendForSquad, estimateDraft, minimumInitialCash,
+  maxClauseSpendForSquad, minClauseSpendForSquad, exactClauseSpendForSquad,
+  estimateDraft, minimumInitialCash,
   type BalanceEstimate, type ThreatAssessment, type RaidTarget, type RivalCapacity,
   type Calibration, type HistoryAudit,
 } from '@mls/engine'
@@ -264,8 +265,10 @@ export function analyze(
         // de 1,0M a 1,5M por jornada y pasa a ser una cifra exacta.
         jornadaRanks: ranksByManager.get(m.id),
         paidBonusCount: bonosPagados > 0 ? bonosPagados : undefined,
-        maxClauseSpend: maxClauseSpendForSquad(m.squad),
-        minClauseSpend: minClauseSpendForSquad(m.squad),
+        // Con el multiplicador publicado el gasto es exacto y las dos cotas
+        // colapsan en la misma cifra.
+        maxClauseSpend: exactClauseSpendForSquad(m.squad) ?? maxClauseSpendForSquad(m.squad),
+        minClauseSpend: exactClauseSpendForSquad(m.squad) ?? minClauseSpendForSquad(m.squad),
         initialSquadValue: initialSquadValue(m.id),
         initialSquadValueHint: config.initialBudget - cajaInicial,
         initialSquadUncertainty: reparto.uncertainty,
@@ -349,8 +352,8 @@ export function analyze(
         managerId: self.id,
         jornadaRanks: ranksByManager.get(self.id),
         paidBonusCount: bonosPagados > 0 ? bonosPagados : undefined,
-        maxClauseSpend: maxClauseSpendForSquad(self.squad),
-        minClauseSpend: minClauseSpendForSquad(self.squad),
+        maxClauseSpend: exactClauseSpendForSquad(self.squad) ?? maxClauseSpendForSquad(self.squad),
+        minClauseSpend: exactClauseSpendForSquad(self.squad) ?? minClauseSpendForSquad(self.squad),
         transactions: feedSelfTransactions,
         historyComplete: feedComplete,
         quinielaObserved: feedSelfTransactions.some((t) => t.type === 'quiniela'),

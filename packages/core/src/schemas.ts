@@ -33,6 +33,7 @@ export const ownedPlayerSchema = playerSchema.extend({
   ownerId: z.number().int().positive(),
   purchasePrice: z.number().int().nonnegative().optional(),
   clause: z.number().int().nonnegative().optional(),
+  clauseMultiplier: z.number().optional(),
   shieldedUntil: z.string().optional(),
   shieldDays: z.number().int().nonnegative().optional(),
   onMarket: z.boolean(),

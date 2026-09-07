@@ -7,10 +7,10 @@ import {
 } from '@mls/mister-client'
 import { MLS_LEAGUE, parseEuros, POSITION_BY_CODE } from '@mls/core'
 import type {
-  LeagueSnapshot, Manager, Player, PlayerStatus, Transaction, MarketEntry,
+  LeagueSnapshot, Manager, Player, OwnedPlayer, PlayerStatus, Transaction, MarketEntry,
 } from '@mls/core'
 import type {
-  BalanceInfo, RawPlayerRecord, LeagueProgression,
+  BalanceInfo, RawPlayerRecord, LeagueProgression, ManagerDetail, RawClauseInfo,
 } from '@mls/mister-client'
 import type { ScraperConfig } from './config.ts'
 
@@ -199,6 +199,10 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     try {
       const detail = await api.getManager(member.id)
       const squad = parseSquad(await api.getUserSquadHtml(member.id, member.slug), member.id)
+      // La ficha del manager trae la clausula con su multiplicador, que el HTML
+      // de plantilla no publica. Es lo que permite calcular exacto lo que ha
+      // gastado en subirlas en vez de acotarlo.
+      applyClauseInfo(squad, detail)
       managers.push({
         id: member.id,
         name: detail.user?.name ?? member.slug,
@@ -599,6 +603,38 @@ export function mergeCatalogIntoSquads(managers: Manager[], catalog: Player[]): 
     }
   }
   return matched
+}
+
+/**
+ * Vuelca sobre la plantilla la clausula que publica la ficha del manager.
+ *
+ * Trae tres cosas que el HTML no da: el multiplicador (1,5 por defecto, medio
+ * punto por tramo pagado), la base sobre la que se calcula, y los dias de
+ * blindaje. El multiplicador es el que importa: con el, lo que un rival gasto
+ * en subir clausulas se calcula exacto en vez de acotarse entre dos cifras.
+ */
+export function applyClauseInfo(squad: OwnedPlayer[], detail: ManagerDetail): number {
+  const porId = new Map<number, RawClauseInfo>()
+  for (const raw of detail.team_now ?? []) {
+    const id = Number(raw.id)
+    if (Number.isFinite(id) && id > 0 && raw.clause) porId.set(id, raw.clause)
+  }
+
+  let anotados = 0
+  for (const p of squad) {
+    const c = porId.get(p.id)
+    if (!c) continue
+    anotados++
+    if (typeof c.value === 'number' && c.value > 0) p.clause = Math.round(c.value)
+    if (typeof c.multiplier === 'number' && c.multiplier > 0) p.clauseMultiplier = c.multiplier
+    // La base es max(precio de compra, valor de mercado): mejor dato que
+    // deducirla, y ademas la publica el propio Mister.
+    if (typeof c.floor === 'number' && c.floor > 0 && p.purchasePrice === undefined) {
+      p.purchasePrice = Math.round(c.floor)
+    }
+    if (typeof c.shield === 'number' && c.shield > 0) p.shieldDays = c.shield
+  }
+  return anotados
 }
 
 /**

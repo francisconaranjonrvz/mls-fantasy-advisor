@@ -124,14 +124,27 @@ export function minimumInitialCash(
   transactions: Transaction[],
   config: LeagueConfig,
 ): Euros {
-  const suyas = transactions
-    .filter((t) => t.managerId === managerId && t.date)
-    .sort((a, b) => a.date.localeCompare(b.date))
+  // Se agrupa POR DIA antes de recorrer, y no es un detalle.
+  //
+  // El mercado de Mister liquida una vez al dia, a las 05:00: las compras y las
+  // ventas de esa resolucion ocurren a la vez. Recorriendo apunte a apunte, el
+  // orden dentro del dia lo decide el feed, y si pone las compras delante sale
+  // un minimo mucho mas profundo del que hubo nunca, con lo que se le exige al
+  // manager una caja de partida que no necesitaba.
+  //
+  // Contra los datos reales eso inflaba la caja exigida a paquete-fc en 7,4M y
+  // a elyisus en 11,7M, y de ahi subia su saldo estimado.
+  const porDia = new Map<string, Euros>()
+  for (const t of transactions) {
+    if (t.managerId !== managerId || !t.date) continue
+    const dia = t.date.slice(0, 10)
+    porDia.set(dia, (porDia.get(dia) ?? 0) + t.amount)
+  }
 
   let acumulado = 0
   let minimo = 0
-  for (const t of suyas) {
-    acumulado += t.amount
+  for (const dia of [...porDia.keys()].sort()) {
+    acumulado += porDia.get(dia) ?? 0
     if (acumulado < minimo) minimo = acumulado
   }
 

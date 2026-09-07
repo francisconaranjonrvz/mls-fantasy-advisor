@@ -56,6 +56,14 @@ export interface OwnedPlayer extends Player {
   purchasePrice?: Euros | undefined
   /** Cláusula de rescision vigente. */
   clause?: Euros | undefined
+  /**
+   * Multiplicador de la clausula: 1,5 por defecto, y medio punto por tramo.
+   *
+   * Es dato publicado, no derivado, y con el lo que un manager gasto en subir
+   * clausulas deja de acotarse y se calcula exacto. Sin el habia que deducir el
+   * tramo dividiendo la clausula entre una base que solo se conoce a medias.
+   */
+  clauseMultiplier?: number | undefined
   /** ISO. Mientras no se alcance, el jugador esta blindado (7 dias tras fichaje). */
   shieldedUntil?: string | undefined
   /**

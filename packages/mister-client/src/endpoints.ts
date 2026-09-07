@@ -145,12 +145,35 @@ export interface PlayerDetail {
   [k: string]: unknown
 }
 
+/**
+ * La clausula de un jugador tal cual la publica /ajax/sw/users.
+ *
+ * `multiplier` es el dato importante y no aparece en ningun otro sitio: 1,5 es
+ * la clausula por defecto y cada medio punto por encima es un tramo pagado.
+ * Con el, lo que un rival gasto en subir clausulas deja de acotarse y se
+ * calcula: 0,2 x base x tramos.
+ *
+ * Ojo con `tier`, que no es el tramo de clausula sino el escalon de precio de
+ * los blindajes de pago (shield_t4_2w y demas).
+ */
+export interface RawClauseInfo {
+  /** Base sobre la que se calcula: max(precio de compra, valor de mercado). */
+  floor?: number
+  /** 1,5 por defecto; 2,0 / 2,5 / 3,0 si se ha pagado por subirla. */
+  multiplier?: number
+  /** Importe de la clausula. */
+  value?: number
+  /** Dias de blindaje que le quedan. */
+  shield?: number
+  [k: string]: unknown
+}
+
 export interface ManagerDetail {
   id?: number | string
   user?: { name?: string }
   season?: { points?: number; avg?: number }
   value?: number
-  team_now?: RawPlayerRecord[]
+  team_now?: (RawPlayerRecord & { clause?: RawClauseInfo })[]
   [k: string]: unknown
 }
 
