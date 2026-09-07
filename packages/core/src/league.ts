@@ -16,11 +16,21 @@ export type SalaryBasis = 'lineup' | 'squad'
 export interface SalaryConfig {
   /**
    * Ajuste "Cobrar salarios por jugadores". En las capturas figura "No",
-   * pero conviven con una base y un porcentaje activos, lo que es
-   * contradictorio. Ver docs/INCOGNITAS.md: el motor evalua ambas ramas
-   * hasta que se confirme en la app.
+   * pero convive con una base y un porcentaje activos, lo que era
+   * contradictorio. Ver docs/INCOGNITAS.md punto 1.
    */
   enabled: boolean
+  /**
+   * Si eso esta comprobado contra datos y no solo leido en una captura.
+   *
+   * Mientras no lo estaba, el motor tenia que evaluar las dos ramas y eso
+   * anadia unos cinco millones de incertidumbre al saldo estimado de cada
+   * rival. Ya lo esta: en 54 movimientos que cubren cuatro jornadas no hay un
+   * solo cargo de salario, y la auditoria del libro contra su propio saldo
+   * resultante cuadra al centimo. Si hubiera un cargo de ~900.000 por jornada
+   * sin modelar, no cuadraria.
+   */
+  confirmed: boolean
   /** Porcentaje cobrado por jornada si `enabled`. */
   pct: number
   /** Sobre que se aplica el porcentaje. */
@@ -107,7 +117,7 @@ export const MLS_LEAGUE: LeagueConfig = {
   loanMinCostPct: 0.10,
 
   // Ajuste literal de las capturas: "Cobrar salarios por jugadores: No".
-  salaries: { enabled: false, pct: 0.01, basis: 'lineup' },
+  salaries: { enabled: false, confirmed: true, pct: 0.01, basis: 'lineup' },
 
   // Escalera INVERTIDA: el ultimo cobra mas que el primero.
   jornadaRankBonus: [

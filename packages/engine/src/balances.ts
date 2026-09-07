@@ -148,9 +148,11 @@ export function quinielaRange(jornadasPlayed: number, config: LeagueConfig): [Eu
 }
 
 /**
- * Rango del coste de salarios. El interruptor maestro figura en No, pero
- * conviven con el una base y un porcentaje activos, asi que hasta confirmarlo
- * en la app modelamos ambas ramas. Ver docs/INCOGNITAS.md.
+ * Rango del coste de salarios.
+ *
+ * Mientras el interruptor no estaba comprobado habia que evaluar las dos
+ * ramas, y eso anadia el cargo entero como incertidumbre: unos cinco millones
+ * por rival. Confirmado que estan apagados, el rango colapsa a cero.
  */
 export function salaryRange(
   jornadasPlayed: number,
@@ -160,6 +162,7 @@ export function salaryRange(
   if (jornadasPlayed <= 0) return [0, 0]
   const full = Math.round(averageLineupValue * config.salaries.pct * jornadasPlayed)
   if (config.salaries.enabled) return [-full, -full]
+  if (config.salaries.confirmed) return [0, 0]
   return [-full, 0]
 }
 
@@ -263,7 +266,7 @@ export function reconstructBalance(
     ledger.averageLineupValue ?? Math.round(ledger.teamValue * 0.6),
     config,
   )
-  if (sLow !== sHigh && !opts.confirmedSalaries) {
+  if (sLow !== sHigh && !opts.confirmedSalaries && !config.salaries.confirmed) {
     unknowns.push('no esta confirmado si los salarios estan activos')
   }
 

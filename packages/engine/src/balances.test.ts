@@ -83,11 +83,25 @@ describe('propagacion de la incertidumbre', () => {
     transactions: [tx('purchase', M(-8))],
   }
 
-  it('la quiniela y los salarios abren el intervalo', () => {
+  it('la quiniela abre el intervalo', () => {
     const e = reconstructBalance(base, MLS_LEAGUE)
     expect(e.high).toBeGreaterThan(e.low)
     expect(e.unknowns.join(' ')).toMatch(/quiniela/)
-    expect(e.unknowns.join(' ')).toMatch(/salarios/)
+  })
+
+  it('los salarios ya no lo abren, porque estan comprobados', () => {
+    // Mientras el interruptor era una captura y no un dato, habia que evaluar
+    // las dos ramas y eso metia el cargo entero como incertidumbre.
+    const e = reconstructBalance(base, MLS_LEAGUE)
+    expect(e.unknowns.join(' ')).not.toMatch(/salarios/)
+
+    const sinConfirmar: LeagueConfig = {
+      ...MLS_LEAGUE,
+      salaries: { ...MLS_LEAGUE.salaries, confirmed: false },
+    }
+    const dudoso = reconstructBalance(base, sinConfirmar)
+    expect(dudoso.high - dudoso.low).toBeGreaterThan(e.high - e.low)
+    expect(dudoso.unknowns.join(' ')).toMatch(/salarios/)
   })
 
   it('el saldo real cae dentro del intervalo', () => {
@@ -197,7 +211,15 @@ describe('rangos auxiliares', () => {
   })
 
   it('con salarios sin confirmar el rango va de cero al cargo completo', () => {
-    expect(salaryRange(5, M(90), MLS_LEAGUE)).toEqual([M(-4.5), 0])
+    const sinConfirmar: LeagueConfig = {
+      ...MLS_LEAGUE,
+      salaries: { ...MLS_LEAGUE.salaries, confirmed: false },
+    }
+    expect(salaryRange(5, M(90), sinConfirmar)).toEqual([M(-4.5), 0])
+  })
+
+  it('comprobado que estan apagados, el rango colapsa a cero', () => {
+    expect(salaryRange(5, M(90), MLS_LEAGUE)).toEqual([0, 0])
   })
 })
 
