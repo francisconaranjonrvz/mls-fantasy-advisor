@@ -95,20 +95,28 @@ async function main(): Promise<void> {
     let offset = 0
     let total = 0
     let paginas = 0
-    const tipos = new Map<string, number>()
+    const categorias = new Map<string, number>()
     let masAntigua = ''
+    let masReciente = ''
+    let ejemploTraspaso: Record<string, unknown> | null = null
+
+    const FECHA = /^\d{4}-\d{2}-\d{2}/
 
     for (let p = 0; p < MAX_PAGINAS; p++) {
       const page = await api.getFeedPage(offset)
       paginas++
       total += page.items.length
       for (const it of page.items) {
-        const bruto = it['type'] ?? it['kind']
-        const t = typeof bruto === 'string' || typeof bruto === 'number' ? String(bruto) : '?'
-        tipos.set(t, (tipos.get(t) ?? 0) + 1)
-        for (const clave of ['date', 'created_at', 'ts', 'adate']) {
-          const v = it[clave]
-          if (typeof v === 'string' && v && (!masAntigua || v < masAntigua)) masAntigua = v
+        const cat = typeof it['category'] === 'string' ? it['category'] : '(sin categoria)'
+        categorias.set(cat, (categorias.get(cat) ?? 0) + 1)
+
+        const fecha = typeof it['date'] === 'string' ? it['date'] : ''
+        if (FECHA.test(fecha)) {
+          if (!masAntigua || fecha < masAntigua) masAntigua = fecha
+          if (!masReciente || fecha > masReciente) masReciente = fecha
+        }
+        if (!ejemploTraspaso && /transfer|traspaso|market|clause|clausula/i.test(cat)) {
+          ejemploTraspaso = it['data'] as Record<string, unknown> | null
         }
       }
       if (page.end || page.items.length === 0) break
@@ -117,10 +125,24 @@ async function main(): Promise<void> {
 
     console.log('')
     console.log(`  ${paginas} paginas recorridas, ${total} entradas en total`)
-    console.log(`  entrada mas antigua encontrada: ${masAntigua || '(sin campo de fecha)'}`)
-    console.log('  tipos de entrada:')
-    for (const [t, n] of [...tipos].sort((a, b) => b[1] - a[1])) {
-      console.log(`     ${String(n).padStart(4)}  ${t}`)
+    console.log(`  ventana cubierta: de ${masAntigua || '?'} a ${masReciente || '?'}`)
+    console.log('  categorias:')
+    for (const [c, n] of [...categorias].sort((a, b) => b[1] - a[1])) {
+      console.log(`     ${String(n).padStart(4)}  ${c}`)
+    }
+
+    if (ejemploTraspaso) {
+      console.log('')
+      console.log('  campos de data en una entrada de traspaso:')
+      for (const [k, v] of Object.entries(ejemploTraspaso)) {
+        const tipo = v === null ? 'null' : Array.isArray(v) ? `array(${v.length})` : typeof v
+        const seguro = ['id', 'type', 'kind', 'date', 'created', 'ts', 'time', 'gw', 'count']
+        const mostrar = seguro.some((n) => k.toLowerCase().includes(n))
+        console.log(
+          `     ${k.padEnd(22)} ${tipo.padEnd(12)}` +
+            `${mostrar ? ' = ' + sanea(JSON.stringify(v)).slice(0, 60) : ''}`,
+        )
+      }
     }
   } catch (err) {
     console.log(`  FALLA: ${err instanceof Error ? err.message.split(String.fromCharCode(10))[0] : String(err)}`)
