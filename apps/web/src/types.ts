@@ -33,7 +33,7 @@ export interface Threat {
   threats: { managerId: number; name: string; capacity: number }[]
   possibleThreats: { managerId: number; name: string; capacity: number }[]
   advice: {
-    action: 'nada' | 'subir' | 'imposible' | 'cebo' | 'incierto'
+    action: 'nada' | 'subir' | 'cobrar_mas' | 'imposible' | 'cebo' | 'incierto'
     tier?: number
     cost?: number
     newClause?: number

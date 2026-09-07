@@ -36,7 +36,9 @@ export function App() {
 
   if (!data) return <div className="wrap"><div className="state">Cargando…</div></div>
 
-  const protegibles = data.threats.filter((t) => t.advice.action === 'subir')
+  const protegibles = data.threats.filter(
+    (t) => t.advice.action === 'subir' || t.advice.action === 'cobrar_mas',
+  )
   const expuestos = data.threats.filter((t) => t.advice.action === 'imposible')
   const cebos = data.threats.filter((t) => t.advice.action === 'cebo')
 
@@ -320,7 +322,7 @@ function ThreatCard({ t }: { t: Threat }) {
           <span>Pueden pagarla: {t.threats.map((x) => x.name).join(', ')}</span>
         )}
       </div>
-      {t.advice.action === 'subir' && t.advice.tier ? (
+      {(t.advice.action === 'subir' || t.advice.action === 'cobrar_mas') && t.advice.tier ? (
         <div className="action">
           Sube al tramo {TIER_LABEL[t.advice.tier]}: {fmt(t.clause)} → {fmt(t.advice.newClause ?? 0)}
           {' '}por {fmtFull(t.advice.cost ?? 0)}

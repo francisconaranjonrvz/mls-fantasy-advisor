@@ -90,13 +90,17 @@ describe('a quien subirle la clausula', () => {
     expect(a.advice.newClause).toBe(M(16))
   })
 
-  it('dice que es imposible cuando ni el tramo maximo pone al jugador a salvo', () => {
+  it('cuando el robo es inevitable, sube la clausula para cobrar mas', () => {
     // Base 8M => el tramo maximo deja la clausula en 24M, y el rival mas rico
-    // llega a 30M. Gastar en protegerlo seria tirar el dinero, y hay que decirlo.
+    // llega a 30M. No se puede evitar el robo. Pero como es casi seguro, subir
+    // sigue siendo buen negocio: cada euro de indemnizacion cuesta 0,40 y se
+    // va a cobrar. Antes esto se despachaba con un "no hay nada que hacer".
     const chollo = owned({ id: 2, name: 'Chollo', value: M(8), points: 40, purchasePrice: M(8) })
     const a = assessPlayerThreat(chollo, rivals, CTX, MLS_LEAGUE, NOW)
-    expect(a.advice.action).toBe('imposible')
-    expect(a.advice.rationale).toMatch(/No hay proteccion posible/)
+    expect(a.advice.action).toBe('cobrar_mas')
+    expect(a.advice.tier).toBe(3)
+    expect(a.advice.newClause!).toBeGreaterThan(a.clause)
+    expect(a.advice.rationale).toMatch(/cobra mas/)
   })
 
   it('no gasta si la clausula por defecto ya basta', () => {
@@ -461,11 +465,38 @@ describe('proteger quitando el incentivo, no la capacidad', () => {
     expect(a.advice.action).toBe('cebo')
   })
 
-  it('solo declara imposible cuando ni quitando el incentivo ni el alcance hay salida', () => {
-    // Rinde tantisimo que ni 3x su base cubre su valor deportivo.
+  it('si el robo es inevitable, al menos cobrarlo caro', () => {
+    // Rinde tantisimo que ni 3x su base cubre lo que le aportaria al rival.
     const crack = owned({ id: 62, name: 'Crack', value: M(5), points: 60, purchasePrice: M(5) })
     const a = assessPlayerThreat(crack, rico, CTX, MLS_LEAGUE, NOW)
-    expect(a.advice.action).toBe('imposible')
-    expect(a.advice.rationale).toMatch(/vendes tu/)
+    expect(a.advice.action).toBe('cobrar_mas')
+    expect(a.advice.cost!).toBeLessThan(a.advice.newClause! - a.clause)
+  })
+
+  it('cuando no hay tramo que proteja, subir SIEMPRE sale a cuenta', () => {
+    /**
+     * No es una casualidad de estos numeros, es aritmetica de las reglas.
+     *
+     * Que ningun tramo quite el incentivo significa que el jugador le vale al
+     * rival mas que 3B, y como la clausula por defecto es 1,5B, el beneficio
+     * del robo supera a la propia clausula. Con eso el modelo da al robo una
+     * probabilidad de al menos 0,45, por encima del 0,40 que cuesta cada euro
+     * de indemnizacion. O sea: si no puedes protegerlo, cobrarlo caro siempre
+     * es mejor que encogerse de hombros.
+     */
+    const casos = [21, 40, 60, 100].map((points) =>
+      assessPlayerThreat(
+        owned({ id: 64 + points, name: `P${points}`, value: M(5), points, purchasePrice: M(5) }),
+        rico, CTX, MLS_LEAGUE, NOW,
+      ),
+    )
+    const sinProteccionPosible = casos.filter(
+      (a) => a.raidProfit > 0 && a.advice.action !== 'subir' && a.advice.action !== 'nada',
+    )
+    expect(sinProteccionPosible.length).toBeGreaterThan(0)
+    for (const a of sinProteccionPosible) {
+      expect(a.advice.action).toBe('cobrar_mas')
+      expect(a.raidProfit).toBeGreaterThan(a.clause)
+    }
   })
 })

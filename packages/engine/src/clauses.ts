@@ -106,6 +106,19 @@ export function cheapestTierAbove(
 }
 
 /**
+ * El tramo mas alto que existe. Se usa cuando la clausula ya no sirve para
+ * proteger sino para cobrar mas: entonces no hay cifra objetivo que alcanzar,
+ * se sube todo lo que se puede.
+ */
+export function maxAffordableTier(base: Euros, marketValue: Euros = base): ClauseTier | null {
+  const tiers = [...CLAUSE_TIERS].reverse()
+  for (const tier of tiers) {
+    if (clauseForTier(base, tier, marketValue) > defaultClause(base, marketValue)) return tier
+  }
+  return null
+}
+
+/**
  * Cláusula efectiva teniendo en cuenta el "ratchet" asimetrico: una cláusula
  * pagada sube proporcionalmente si el valor del jugador sube, pero se congela
  * si el valor baja.

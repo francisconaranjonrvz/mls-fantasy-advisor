@@ -13,6 +13,10 @@ import type { Diagnosis } from './analyze.ts'
 
 const bar = (n: number) => '='.repeat(n)
 
+/** Consejos que se traducen en tocar una clausula, protegiendo o cobrando. */
+const accionSobreClausula = (action: string): boolean =>
+  action === 'subir' || action === 'cobrar_mas'
+
 export function renderDiagnosis(d: Diagnosis): string {
   const L: string[] = []
 
@@ -97,7 +101,9 @@ export function renderDiagnosis(d: Diagnosis): string {
   L.push('')
 
   // --- Amenazas ---
-  const enPeligro = d.threats.filter((t) => t.advice.action === 'subir' || t.advice.action === 'imposible')
+  const enPeligro = d.threats.filter(
+    (t) => accionSobreClausula(t.advice.action) || t.advice.action === 'imposible',
+  )
   const cebos = d.threats.filter((t) => t.advice.action === 'cebo')
 
   L.push('## Tus jugadores en peligro')
@@ -115,9 +121,13 @@ export function renderDiagnosis(d: Diagnosis): string {
         '(medido sobre cuanto mejoraria SU once, no sobre lo bueno que es el jugador)',
       )
       L.push(`- Pueden pagarla: ${t.threats.map((x) => x.name).join(', ') || 'nadie'}`)
-      if (t.advice.action === 'subir' && t.advice.tier) {
+      if ((t.advice.action === 'subir' || t.advice.action === 'cobrar_mas') && t.advice.tier) {
+        const proposito =
+          t.advice.action === 'subir'
+            ? 'para que robarlo deje de compensar'
+            : 'para cobrar mas cuando te lo roben, porque evitarlo no se puede'
         L.push(
-          `- **Accion: subir al tramo ${CLAUSE_TIER_LABEL[t.advice.tier]}** ` +
+          `- **Accion: subir al tramo ${CLAUSE_TIER_LABEL[t.advice.tier]} ${proposito}** ` +
           `(${formatShort(t.clause)} -> ${formatShort(t.advice.newClause ?? 0)}), ` +
           `coste ${formatShort(t.advice.cost ?? 0)}`,
         )
@@ -269,7 +279,10 @@ export function renderConsoleSummary(d: Diagnosis): string {
   // repositorio privado de datos.
   if (d.self.balance !== null) L.push('  Saldo y gasto maximo: en el informe privado')
   L.push(`  Rivales analizados: ${d.rivals.length}`)
-  L.push(`  Jugadores tuyos en peligro: ${d.threats.filter((t) => t.advice.action === 'subir').length}`)
+  L.push(
+    '  Jugadores tuyos en peligro: ' +
+      d.threats.filter((t) => accionSobreClausula(t.advice.action)).length,
+  )
   L.push(`  Clausulazos viables: ${d.raids.length}`)
   L.push(`  Lastre a vender: ${d.deadweight.length}`)
   if (d.calibration) {

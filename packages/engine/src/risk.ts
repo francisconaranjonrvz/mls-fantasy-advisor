@@ -1,7 +1,7 @@
 import type { Euros, OwnedPlayer, LeagueConfig } from '@mls/core'
 import {
   clauseBase, defaultClause, cheapestTierAbove, tierCost, clauseForTier,
-  isShielded, CLAUSE_TIER_LABEL, type ClauseTier,
+  maxAffordableTier, isShielded, CLAUSE_EXCHANGE_RATE, CLAUSE_TIER_LABEL, type ClauseTier,
 } from './clauses.ts'
 import { sportingValue, type ValuationContext } from './valuation.ts'
 import { marginalGain } from './marginal.ts'
@@ -55,7 +55,7 @@ export interface RivalCapacity {
 export type RiskLevel = 'ninguno' | 'bajo' | 'medio' | 'alto'
 
 export interface ProtectionAdvice {
-  action: 'nada' | 'subir' | 'imposible' | 'cebo' | 'incierto'
+  action: 'nada' | 'subir' | 'cobrar_mas' | 'imposible' | 'cebo' | 'incierto'
   tier?: ClauseTier | undefined
   cost?: Euros | undefined
   newClause?: Euros | undefined
@@ -178,7 +178,7 @@ export function assessPlayerThreat(
     expectedLoss,
     advice: adviseProtection({
       player, base, clause, sportingValue: sv, raidProfit, threats, possibleThreats,
-      shielded, expectedLoss, config,
+      shielded, expectedLoss, raidProbability: p, config,
     }),
   }
 }
@@ -193,6 +193,7 @@ function adviseProtection(args: {
   possibleThreats: RivalCapacity[]
   shielded: boolean
   expectedLoss: Euros
+  raidProbability: number
   config: LeagueConfig
 }): ProtectionAdvice {
   const { player, base, clause, raidProfit, threats, possibleThreats, shielded, expectedLoss } = args
@@ -293,12 +294,42 @@ function adviseProtection(args: {
     }
   }
 
+  // No poder evitar el robo no significa que no haya nada que hacer.
+  //
+  // Si te lo van a quitar igualmente, subir la clausula ya no sirve para
+  // protegerlo, pero si para COBRAR MAS por el. Y el precio de eso es fijo y
+  // conocido: 0,40 EUR por cada euro de clausula adicional. Asi que la
+  // condicion es de una sencillez util: merece la pena siempre que la
+  // probabilidad de que te lo roben supere ese 0,40. Por debajo estarias
+  // pagando por una indemnizacion que probablemente no vas a cobrar.
+  //
+  // Y encima es reversible: bajar la clausula devuelve el 50%.
+  const tierMax = maxAffordableTier(base, player.value)
+  if (tierMax !== null && tierMax > 0 && args.raidProbability > CLAUSE_EXCHANGE_RATE) {
+    const cost = tierCost(base, tierMax)
+    const newClause = clauseForTier(base, tierMax, player.value)
+    const extra = newClause - clause
+    return {
+      action: 'cobrar_mas',
+      tier: tierMax,
+      cost,
+      newClause,
+      rationale:
+        `No hay forma de quitarle a ${threats[0]!.name} las ganas de pagarla, asi que da por ` +
+        'hecho el robo y cobra mas por el. Subir al tramo maximo cuesta ' +
+        `${Math.round(cost / 1000)}k y sube la indemnizacion ${Math.round(extra / 1000)}k. ` +
+        'Sale a cuenta porque el robo es mas probable que el 40% que cuesta cada euro de ' +
+        'clausula, y ademas si al final no ocurre recuperas la mitad bajandola.',
+    }
+  }
+
   return {
     action: 'imposible',
     rationale:
       'Rinde tanto por encima de su precio que ni subiendo al tramo maximo deja de compensarle a ' +
-      `un rival pagarlo, y ${threats[0]!.name} tiene saldo de sobra. No hay proteccion posible: o ` +
-      'lo vendes tu al precio que quieras, o asumes el robo y cobras la clausula.',
+      `un rival pagarlo, y ${threats[0]!.name} tiene saldo de sobra. Tampoco sale a cuenta subirla ` +
+      'solo para cobrar mas, porque el robo no es lo bastante probable. O lo vendes tu al precio ' +
+      'que quieras, o lo dejas estar.',
   }
 }
 
@@ -325,7 +356,11 @@ export function planProtection(
   budget: Euros,
 ): { plan: ThreatAssessment[]; totalCost: Euros; remaining: Euros } {
   const candidates = assessments
-    .filter((a) => a.advice.action === 'subir' && (a.advice.cost ?? 0) > 0)
+    .filter(
+      (a) =>
+        (a.advice.action === 'subir' || a.advice.action === 'cobrar_mas') &&
+        (a.advice.cost ?? 0) > 0,
+    )
     .sort((a, b) => b.expectedLoss / (b.advice.cost ?? 1) - a.expectedLoss / (a.advice.cost ?? 1))
 
   const plan: ThreatAssessment[] = []
