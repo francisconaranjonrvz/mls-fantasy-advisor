@@ -119,6 +119,7 @@ async function main(): Promise<void> {
     // Un ejemplo de data por cada categoria, para verlas todas de una pasada
     // en vez de gastar una ejecucion por categoria.
     const ejemplos = new Map<string, Record<string, unknown>>()
+    const vistosConContenido = new Set<string>()
 
     const FECHA = /^\d{4}-\d{2}-\d{2}/
 
@@ -136,16 +137,28 @@ async function main(): Promise<void> {
           if (!masReciente || fecha > masReciente) masReciente = fecha
         }
         // Las operaciones no estan en la entrada sino dentro de data, y una
-        // tarjeta agrupa varias del mismo momento. Se guarda un ejemplo por
-        // categoria, prefiriendo uno cuyo data no venga vacio.
+        // tarjeta agrupa varias del mismo momento. data unas veces es un
+        // objeto con listas dentro y otras es la lista directamente; tratarlo
+        // solo como objeto dejaba fuera justo las categorias que interesan.
         const data = it['data']
-        if (data && typeof data === 'object' && !Array.isArray(data)) {
-          const tieneAlgo = Object.values(data as Record<string, unknown>).some(
-            (v) => Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined,
+        const normalizado: Record<string, unknown> | null =
+          Array.isArray(data) ? { '(data es una lista)': data }
+          : data && typeof data === 'object' ? (data as Record<string, unknown>)
+          : null
+
+        if (normalizado) {
+          const tieneAlgo = Object.values(normalizado).some(
+            (v) => (Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined),
           )
-          if (tieneAlgo && !ejemplos.has(cat)) {
-            ejemplos.set(cat, data as Record<string, unknown>)
+          // Se prefiere un ejemplo con contenido, pero si no lo hay se guarda
+          // igual el vacio: saber que una categoria viene siempre vacia es
+          // informacion, no un hueco.
+          if (!ejemplos.has(cat) || (tieneAlgo && !vistosConContenido.has(cat))) {
+            ejemplos.set(cat, normalizado)
+            if (tieneAlgo) vistosConContenido.add(cat)
           }
+        } else if (!ejemplos.has(cat)) {
+          ejemplos.set(cat, { '(data)': data === null ? 'null' : typeof data })
         }
       }
       if (page.end || page.items.length === 0) break
