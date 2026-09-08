@@ -1,13 +1,60 @@
 import { useEffect, useState } from 'react'
-import type { Diagnosis, Threat } from './types.ts'
-import { fmt, fmtFull, fmtDate } from './format.ts'
-import { Chat } from './Chat.tsx'
+import type { Diagnosis } from './types.ts'
+import { fmt, fmtDate } from './format.ts'
+import { Inicio } from './views/Inicio.tsx'
+import { Plantilla } from './views/Plantilla.tsx'
+import { Mercado } from './views/Mercado.tsx'
+import { Tabla } from './views/Tabla.tsx'
+import { Asesor } from './views/Asesor.tsx'
 
-const TIER_LABEL: Record<number, string> = { 1: '+100%', 2: '+150%', 3: '+200%' }
+/**
+ * Las cinco secciones y su icono. El orden imita al de Mister, que es donde el
+ * usuario ya tiene el dedo acostumbrado: primero como voy, luego mi plantilla,
+ * luego en que gastar, luego contra quien compito.
+ */
+const TABS = [
+  { id: 'inicio', label: 'Inicio', icon: 'M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5' },
+  { id: 'plantilla', label: 'Plantilla', icon: 'M9 3 4 5.5V10h3v11h10V10h3V5.5L15 3a3 3 0 0 1-6 0Z' },
+  { id: 'mercado', label: 'Mercado', icon: 'M3 8h13l-3-3m8 11H8l3 3' },
+  { id: 'tabla', label: 'Tabla', icon: 'M7 4h10v5a5 5 0 0 1-10 0V4ZM4 5h3M17 5h3M9 20h6M12 14v6' },
+  { id: 'asesor', label: 'Asesor', icon: 'M21 12a8 8 0 1 1-3.2-6.4M12 8v4M12 16h.01' },
+] as const
+
+type TabId = (typeof TABS)[number]['id']
+
+const DEFAULT_TAB: TabId = 'inicio'
+
+function isTab(v: string): v is TabId {
+  return TABS.some((t) => t.id === v)
+}
+
+/**
+ * La seccion vive en el hash de la URL en vez de en un estado suelto, de modo
+ * que se puede compartir un enlace directo al mercado, el boton de atras del
+ * navegador funciona y recargar no te devuelve a la portada. Es lo que daria un
+ * router, sin la dependencia.
+ */
+function useTab(): TabId {
+  const read = () => {
+    const h = window.location.hash.slice(1)
+    return isTab(h) ? h : DEFAULT_TAB
+  }
+  const [tab, setTab] = useState<TabId>(read)
+  useEffect(() => {
+    const on = () => {
+      setTab(read())
+      window.scrollTo({ top: 0 })
+    }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
+  return tab
+}
 
 export function App() {
   const [data, setData] = useState<Diagnosis | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const tab = useTab()
 
   useEffect(() => {
     fetch('/api/state')
@@ -19,6 +66,11 @@ export function App() {
       .then(setData)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
+
+  useEffect(() => {
+    const t = TABS.find((x) => x.id === tab)
+    document.title = tab === DEFAULT_TAB ? 'Asesor MLS' : `${t?.label} | Asesor MLS`
+  }, [tab])
 
   if (error) {
     return (
@@ -34,13 +86,13 @@ export function App() {
     )
   }
 
-  if (!data) return <div className="wrap"><div className="state">Cargando…</div></div>
-
-  const protegibles = data.threats.filter(
-    (t) => t.advice.action === 'subir' || t.advice.action === 'cobrar_mas',
-  )
-  const expuestos = data.threats.filter((t) => t.advice.action === 'imposible')
-  const cebos = data.threats.filter((t) => t.advice.action === 'cebo')
+  if (!data) {
+    return (
+      <div className="wrap">
+        <div className="state">Cargando…</div>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -67,345 +119,46 @@ export function App() {
         </div>
       </div>
 
+      <nav className="tabs" aria-label="Secciones">
+        <div className="inner">
+          {TABS.map((t) => (
+            <a
+              key={t.id}
+              className={`tab${t.id === tab ? ' on' : ''}`}
+              href={`#${t.id}`}
+              aria-current={t.id === tab ? 'page' : undefined}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d={t.icon} />
+              </svg>
+              {t.label}
+            </a>
+          ))}
+        </div>
+      </nav>
+
       <div className="wrap">
         <header className="top">
-          <h1>Asesor MLS</h1>
+          <h1>{TABS.find((t) => t.id === tab)?.label}</h1>
           <span className="tag">Jornada {data.currentJornada}</span>
           <span className="when">Datos del {fmtDate(data.generatedAt)}</span>
         </header>
-        <p className="status">
-          {data.self.rank}º con {data.self.points} pts
-          {data.self.pointsToLeader > 0 ? ` · a ${data.self.pointsToLeader} del líder` : ' · líder'}
-        </p>
-        <p className="lead">
-          Gana quien más puntos acumule en 38 jornadas. El dinero solo es el medio.
-        </p>
-
-        <section>
-          <h2>Tu situación</h2>
-          <div className="cards">
-            <div className="card">
-              <div className="k">Clasificación</div>
-              <div className="v">{data.self.rank}º</div>
-              <div className="sub">
-                {data.self.points} pts
-                {data.self.pointsToLeader > 0 ? ` · a ${data.self.pointsToLeader} del líder` : ' · líder'}
-              </div>
-            </div>
-            <div className="card">
-              <div className="k">Saldo</div>
-              <div className="v">{fmt(data.self.balance)}</div>
-              <div className="sub">{fmtFull(data.self.balance)}</div>
-            </div>
-            <div className="card">
-              <div className="k">Puede gastar</div>
-              <div className="v">{fmt(data.self.maxSpend)}</div>
-              <div className="sub">saldo + 25% del equipo</div>
-            </div>
-            <div className="card">
-              <div className="k">Valor de equipo</div>
-              <div className="v">{fmt(data.self.teamValue)}</div>
-              <div className="sub">{fmtFull(data.self.teamValue)}</div>
-            </div>
-          </div>
-
-          {data.calibration && (
-            <div className={`note${data.calibration.error === 0 ? '' : ' warn'}`}>
-              {data.calibration.error === 0
-                ? 'La reconstrucción de saldos reproduce exactamente tu saldo real, así que las estimaciones de los rivales son fiables.'
-                : `La reconstrucción aplicada a tu propia cuenta se desvía ${fmt(data.calibration.error)} (${data.calibration.errorPct.toFixed(1)}%). Las estimaciones de los rivales arrastran ese mismo sesgo.`}
-            </div>
-          )}
-        </section>
-
-        <section>
-          <h2>Rivales · saldo reconstruido</h2>
-          <div className="tablebox">
-            <table>
-              <thead>
-                <tr>
-                  <th>Manager</th>
-                  <th className="num">Puntos</th>
-                  <th className="num">Equipo</th>
-                  <th className="num">Saldo estimado</th>
-                  <th className="num">Puede gastar</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.rivals.map((r) => (
-                  <tr key={r.managerId}>
-                    <td>{r.name}</td>
-                    <td className="num">{r.points}</td>
-                    <td className="num">{fmt(r.teamValue)}</td>
-                    <td className="num">
-                      {r.balance.exact
-                        ? fmt(r.balance.estimate)
-                        : `${fmt(r.balance.low)} – ${fmt(r.balance.high)}`}
-                    </td>
-                    <td className="num"><b>{fmt(r.threatCapacity)}</b></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="note">
-            Mister oculta el saldo ajeno en esta liga, así que se reconstruye a partir del
-            historial de operaciones y del presupuesto inicial común de 50M. «Puede gastar»
-            usa el escenario más rico de cada rival: al protegerte conviene equivocarse por
-            prudencia.
-          </div>
-        </section>
-
-        <section>
-          <h2>Tus jugadores en peligro</h2>
-          {protegibles.length === 0 && expuestos.length === 0 && (
-            <p className="empty">Ningún jugador tuyo está hoy en riesgo real de clausulazo.</p>
-          )}
-          {protegibles.map((t) => <ThreatCard key={t.player.id} t={t} />)}
-          {expuestos.slice(0, 5).map((t) => <ThreatCard key={t.player.id} t={t} />)}
-
-          {expuestos.length > 5 && (
-            <div className="note">
-              Y {expuestos.length - 5} jugadores más que tampoco se pueden poner fuera del alcance
-              del rival más rico ni subiendo al tramo máximo. Con ellos la única alternativa es
-              venderlos tú o asumir el robo y cobrar la cláusula.
-            </div>
-          )}
-
-          {data.uncertainCount > 0 && (
-            <div className="note">
-              Otros {data.uncertainCount} jugadores tuyos no están confirmados como seguros, pero
-              tampoco consta que nadie pueda pagarles la cláusula. Esa duda viene de que Mister
-              oculta el saldo ajeno, no de una amenaza real: se estrechará en cuanto la ingesta
-              capture el feed de movimientos de los rivales.
-            </div>
-          )}
-
-          {data.protection.plan.length > 0 && (
-            <div className="note">
-              Plan recomendado: {data.protection.plan.map((p) => p.player.name).join(', ')}.
-              Coste total {fmtFull(data.protection.totalCost)}.
-            </div>
-          )}
-        </section>
-
-        {cebos.length > 0 && (
-          <section>
-            <h2>Cebos · déjalos sin proteger a propósito</h2>
-            {cebos.map((t) => <ThreatCard key={t.player.id} t={t} />)}
-          </section>
-        )}
-
-        <section>
-          <h2>Fichajes del mercado abierto</h2>
-          {(data.market?.buys?.length ?? 0) === 0 ? (
-            <p className="empty">
-              Hoy el mercado no ofrece nada que mejore tu once con tu capacidad actual.
-            </p>
-          ) : (
-            <div className="tablebox">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Jugador</th>
-                    <th>Pos</th>
-                    <th className="num">Precio</th>
-                    <th className="num">Puntos que ganas</th>
-                    <th className="num">Coste por punto</th>
-                    <th>A quién sienta</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.market.buys.map((b) => (
-                    <tr key={b.playerId}>
-                      <td>{b.name}</td>
-                      <td>{b.position}</td>
-                      <td className="num">{fmt(b.price)}</td>
-                      <td className="num"><b>{b.pointsGained.toFixed(0)}</b></td>
-                      <td className="num">{fmt(b.costPerPoint)}</td>
-                      <td>{b.displaces ?? 'hueco libre'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        <section>
-          <h2>Clausulazos recomendados</h2>
-          <p className="note">
-            {data.market?.bestCostPerPoint !== null && data.market !== undefined ? (
-              <>
-                El listón: hoy el punto más barato del mercado abierto es{' '}
-                <b>{data.market.playerName}</b> a {fmt(data.market.price ?? 0)}, o sea{' '}
-                <b>{fmt(Math.round(data.market.bestCostPerPoint))} por punto</b>. Un clausulazo
-                solo compensa si baja de esa cifra.
-              </>
-            ) : (
-              <>El mercado abierto no ofrece hoy nada que mejore tu once, así que no hay
-              alternativa con la que comparar un clausulazo.</>
-            )}
+        {tab === DEFAULT_TAB && (
+          <p className="status">
+            {data.self.rank}º con {data.self.points} pts
+            {data.self.pointsToLeader > 0
+              ? ` · a ${data.self.pointsToLeader} del líder`
+              : ' · líder'}
           </p>
-          {data.raids.length === 0 ? (
-            <p className="empty">Hoy no hay ningún robo que salga a cuenta con tu capacidad actual.</p>
-          ) : (
-            <>
-              <div className="tablebox">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Jugador</th>
-                      <th>Dueño</th>
-                      <th className="num">Cláusula</th>
-                      <th className="num">Puntos que ganas</th>
-                      <th className="num">Coste por punto</th>
-                      <th>A quién sienta</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.raids.map((r) => (
-                      <tr key={r.player.id}>
-                        <td>{r.player.name}</td>
-                        <td>{r.ownerName}</td>
-                        <td className="num">{fmt(r.clause)}</td>
-                        <td className="num"><b>{r.gain.remaining.toFixed(0)}</b></td>
-                        <td className="num">{fmt(Math.round(r.costPerPoint))}</td>
-                        <td>{r.gain.displaces?.name ?? 'hueco libre'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {data.raidPlan.plan.length > 0 && (
-                <div className="note">
-                  Plan de hoy, respetando el límite de 3 cláusulas diarias y tu saldo:{' '}
-                  {data.raidPlan.plan.map((r) => `${r.player.name} (${fmt(r.clause)})`).join(', ')}.
-                  Coste total {fmtFull(data.raidPlan.totalCost)}.
-                </div>
-              )}
-            </>
-          )}
-        </section>
-
-        {data.lineup && (
-          <section>
-            <h2>Once recomendado</h2>
-            <div className="item">
-              <h3>
-                {data.lineup.formation}
-                <span className="tag">{data.lineup.expectedPoints} pts esperados</span>
-                {data.lineup.emptySlots > 0 && (
-                  <span className="tag alto">{data.lineup.emptySlots} huecos</span>
-                )}
-              </h3>
-              {(['GK', 'DF', 'MF', 'FW'] as const).map((pos) => {
-                const linea = data.lineup!.starters.filter((s) => s.position === pos)
-                if (linea.length === 0) return null
-                return (
-                  <div className="facts" key={pos} style={{ marginTop: 6 }}>
-                    <span style={{ minWidth: 32 }}><b>{pos}</b></span>
-                    <span>{linea.map((s) => `${s.name} (${s.expectedPoints})`).join(' · ')}</span>
-                  </div>
-                )
-              })}
-              {data.lineup.costOfNextBest > 0 && (
-                <p className="why">
-                  El siguiente mejor dibujo rendiría {data.lineup.costOfNextBest} puntos menos.
-                </p>
-              )}
-            </div>
-
-            {data.lineup.emptySlots > 0 && (
-              <div className="note warn">
-                Quedan {data.lineup.emptySlots} huecos sin cubrir, que restan{' '}
-                {Math.abs(data.lineup.penalty)} puntos. Merece la pena fichar aunque sea barato: un
-                canterano de 160.000 evita ese −4.
-              </div>
-            )}
-
-            {data.lineup.substitution && (
-              <div className="note">
-                Cambio durante la jornada (solo se permite uno):{' '}
-                <b>{data.lineup.substitution.outName}</b> por{' '}
-                <b>{data.lineup.substitution.inName}</b>, +{data.lineup.substitution.gain} puntos.{' '}
-                {data.lineup.substitution.rationale}
-              </div>
-            )}
-          </section>
         )}
+        <p className="lead">Gana quien más puntos acumule en 38 jornadas. El dinero solo es el medio.</p>
 
-        {data.deadweight.length > 0 && (
-          <section>
-            <h2>Lastre a vender</h2>
-            {data.deadweight.map((d) => (
-              <div className="item" key={d.playerId}>
-                <h3>{d.name} <span className="tag">{fmt(d.value)}</span></h3>
-                <p className="why">{d.reason}</p>
-              </div>
-            ))}
-          </section>
-        )}
-
-        <section>
-          <h2>Pregúntale al asesor</h2>
-          <Chat />
-        </section>
-
-        {data.warnings.length > 0 && (
-          <section>
-            <h2>Limitaciones de estos datos</h2>
-            {data.warnings.map((w, i) => <div className="note warn" key={i}>{w}</div>)}
-          </section>
-        )}
+        {tab === 'inicio' && <Inicio data={data} />}
+        {tab === 'plantilla' && <Plantilla data={data} />}
+        {tab === 'mercado' && <Mercado data={data} />}
+        {tab === 'tabla' && <Tabla data={data} />}
+        {tab === 'asesor' && <Asesor data={data} />}
       </div>
     </>
-  )
-}
-
-/**
- * Una tarjeta por jugador amenazado. Muestra siempre las tres cifras que
- * sostienen la decision (clausula, lo que vale y lo que ganaria quien lo robe)
- * y el porque, para que la recomendacion se pueda discutir en vez de obedecer.
- */
-function ThreatCard({ t }: { t: Threat }) {
-  const cls = t.advice.action === 'cebo' ? 'cebo' : `risk-${t.risk}`
-  return (
-    <div className={`item ${cls}`}>
-      <h3>
-        {t.player.name}
-        <span className={`tag ${t.advice.action === 'cebo' ? 'cebo' : t.risk}`}>
-          {t.advice.action === 'cebo' ? 'cebo' : `riesgo ${t.risk}`}
-        </span>
-        {t.shielded && <span className="tag ok">blindado</span>}
-      </h3>
-      <div className="facts">
-        <span>Cláusula <b>{fmt(t.clause)}</b></span>
-        {/*
-          Antes aqui ponia «Vale» y se pintaba el valor deportivo, que es cosa
-          del modelo, no de Mister. Al lado de una clausula en euros se leia
-          como el valor de mercado, y no cuadraba con la ficha del jugador:
-          Mister decia 570.000 y aqui salia 2,7M. Son dos cifras distintas y
-          ahora se dicen las dos, cada una con su nombre.
-        */}
-        <span>Valor <b>{fmt(t.player.value)}</b></span>
-        <span>Rinde como <b>{fmt(t.sportingValue)}</b></span>
-        <span>Beneficio para quien lo robe <b>{fmt(t.raidProfit)}</b></span>
-        {t.threats.length > 0 && (
-          <span>Pueden pagarla: {t.threats.map((x) => x.name).join(', ')}</span>
-        )}
-      </div>
-      {(t.advice.action === 'subir' || t.advice.action === 'cobrar_mas') && t.advice.tier ? (
-        <div className="action">
-          Sube al tramo {TIER_LABEL[t.advice.tier]}: {fmt(t.clause)} → {fmt(t.advice.newClause ?? 0)}
-          {' '}por {fmtFull(t.advice.cost ?? 0)}
-        </div>
-      ) : (
-        <div className="action none">
-          {t.advice.action === 'imposible' ? 'No se puede proteger' : 'Sin acción'}
-        </div>
-      )}
-      <p className="why">{t.advice.rationale}</p>
-    </div>
   )
 }

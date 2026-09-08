@@ -94,6 +94,31 @@ body {
 }
 .pill .u { color: var(--muted); font-weight: 600; }
 
+/* --- Navegacion por secciones ---
+   Cinco pestanas con icono y etiqueta, como la barra de Mister. Son enlaces de
+   verdad a un hash, asi que se pueden compartir, abrir en otra pestana y el
+   boton de atras del navegador hace lo que se espera. */
+.tabs { position: sticky; top: 56px; z-index: 9; background: var(--bg); border-bottom: var(--bd); }
+.tabs .inner {
+  max-width: var(--maxw); margin: 0 auto; display: flex; gap: 2px;
+  padding: 0 var(--s4); overflow-x: auto; scrollbar-width: none;
+}
+.tabs .inner::-webkit-scrollbar { display: none; }
+.tab {
+  flex: 1; min-width: 62px; display: flex; flex-direction: column;
+  align-items: center; gap: 4px; padding: 9px 6px 8px;
+  color: var(--muted); text-decoration: none; white-space: nowrap;
+  font-size: var(--fs-xs); font-weight: 600;
+  border-bottom: 2px solid transparent;
+}
+.tab svg {
+  width: 20px; height: 20px; fill: none; stroke: currentColor;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.tab:hover { color: var(--text-2); }
+.tab.on { color: var(--text); border-bottom-color: var(--accent); }
+.tab.on svg { color: var(--accent); }
+
 .wrap { max-width: var(--maxw); margin: 0 auto; padding: 20px var(--s4) 96px; }
 
 header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s3); margin-bottom: var(--s1); }
@@ -125,21 +150,49 @@ section > h2 {
 .card .k { order: 2; color: var(--muted); font-size: var(--fs-xs); margin-top: 3px; }
 .card .sub { order: 3; color: var(--muted); font-size: var(--fs-xs); margin-top: 2px; }
 
-.tablebox { background: var(--surface); border: var(--bd); border-radius: var(--r); overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
-thead th {
-  text-align: left; font-size: var(--fs-micro); font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
-  padding: 12px 14px; border-bottom: var(--bd); white-space: nowrap;
+/* --- Filas ---
+   Sustituyen a las tablas de seis columnas, que en el movil solo se leian
+   arrastrando de lado. Una fila de Mister: foto, nombre, una linea de contexto
+   debajo, y la cifra que importa alineada a la derecha. */
+.rows { background: var(--surface); border: var(--bd); border-radius: var(--r); overflow: hidden; }
+.row {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3) var(--s4); border-bottom: var(--bd);
 }
-tbody td { height: 52px; padding: 14px; border-bottom: var(--bd); color: var(--text-2); }
-/* El nombre no parte en dos lineas: antes que eso, que la tabla haga scroll. */
-tbody td:first-child { color: var(--text); font-weight: 600; white-space: nowrap; }
-tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover td { background: var(--surface-2); }
-.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
-/* .num gana por especificidad a `thead th`, asi que la cabecera se reafirma. */
-thead th.num { color: var(--muted); font-weight: 600; }
+.row:last-child { border-bottom: none; }
+.row:hover { background: var(--surface-2); }
+.row--self { background: var(--accent-soft); }
+.row--self .row-n, .row--self .rank { color: var(--accent); }
+.row-main { flex: 1; min-width: 0; }
+.row-n {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  color: var(--text); font-size: var(--fs-md); font-weight: 700;
+}
+.row-m { color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; }
+.row-side { flex: none; text-align: right; }
+.price {
+  display: block; color: var(--text); font-size: var(--fs-md);
+  font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.row-sub { display: block; color: var(--muted); font-size: var(--fs-micro); margin-top: 1px; }
+.rank {
+  flex: none; width: 22px; text-align: center; color: var(--muted);
+  font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums;
+}
+
+/* --- Fotos ---
+   Las sirve el CDN de Mister por id de jugador. Cuando falta, PlayerAvatar
+   pinta las iniciales sobre el mismo hueco para que la fila no baile. */
+.avatar {
+  width: 44px; height: 44px; flex: none;
+  border-radius: 10px; background: var(--surface-2); object-fit: cover;
+}
+.avatar--sm { width: 28px; height: 28px; border-radius: 8px; }
+.avatar--empty {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: var(--fs-sm); font-weight: 700;
+}
+.avatar--sm.avatar--empty { font-size: var(--fs-micro); }
 
 .item {
   background: var(--surface); border: var(--bd);
@@ -152,6 +205,8 @@ thead th.num { color: var(--muted); font-weight: 600; }
 .item.risk-bajo { border-left: 3px solid var(--info); }
 .item.risk-ninguno { border-left: 3px solid var(--border); }
 .item.cebo { border-left: 3px solid var(--accent); }
+.item-head { display: flex; align-items: flex-start; gap: var(--s3); }
+.item-title { flex: 1; min-width: 0; }
 .item h3 {
   display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
   font-size: var(--fs-md); font-weight: 700; color: var(--text); margin: 0 0 var(--s2);
@@ -159,6 +214,49 @@ thead th.num { color: var(--muted); font-weight: 600; }
 .item .why { color: var(--muted); font-size: var(--fs-sm); margin: var(--s2) 0 0; }
 .facts { display: flex; flex-wrap: wrap; gap: var(--s3) var(--s4); font-size: var(--fs-sm); color: var(--text-2); }
 .facts b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* --- Que hacer hoy ---
+   La portada abre con las cuatro decisiones del dia y su cuenta, y cada una
+   lleva a la seccion donde se razona. Antes habia que leerse las diez secciones
+   enteras para saber si tocaba hacer algo. */
+.todo { display: grid; gap: var(--s2); }
+.todo-item {
+  display: flex; align-items: center; gap: var(--s3);
+  background: var(--surface); border: var(--bd); border-radius: var(--r);
+  padding: var(--s3) var(--s4); color: inherit; text-decoration: none;
+}
+.todo-item:hover { background: var(--surface-2); }
+.todo-n {
+  flex: none; min-width: 36px; height: 36px; padding: 0 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-soft); color: var(--accent);
+  border-radius: var(--r-sm); font-size: var(--fs-lg); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.todo-t { color: var(--text); font-size: var(--fs-md); font-weight: 600; }
+.todo-t em {
+  display: block; font-style: normal; color: var(--muted);
+  font-size: var(--fs-sm); font-weight: 500; margin-top: 2px;
+}
+
+/* --- Once recomendado --- */
+.lineup { display: grid; gap: var(--s2); margin-top: var(--s3); }
+.linea { display: flex; align-items: flex-start; gap: var(--s3); }
+.linea-k {
+  flex: none; width: 62px; padding-top: 8px; color: var(--muted);
+  font-size: var(--fs-xs); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.linea-p { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
+.starter {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface-2); border-radius: var(--r-pill); padding: 3px 11px 3px 3px;
+}
+.starter-n { color: var(--text); font-size: var(--fs-sm); font-weight: 600; }
+.starter-p {
+  color: var(--accent); font-size: var(--fs-sm);
+  font-weight: 700; font-variant-numeric: tabular-nums;
+}
 
 .tag {
   font-size: var(--fs-micro); font-weight: 700; padding: 3px 7px;
@@ -244,4 +342,9 @@ thead th.num { color: var(--muted); font-weight: 600; }
   .cards { grid-template-columns: 1fr; }
   .facts { flex-direction: column; gap: 6px; }
   header.top .when { margin-left: 0; width: 100%; }
+  .tabs .inner { padding: 0 var(--s2); }
+  .tab { min-width: 58px; font-size: var(--fs-micro); }
+  .row { padding: 10px var(--s3); gap: 10px; }
+  .linea { flex-direction: column; gap: 4px; }
+  .linea-k { padding-top: 0; width: auto; }
 }
