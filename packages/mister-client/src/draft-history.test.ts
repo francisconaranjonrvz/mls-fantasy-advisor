@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { PlayerDetail } from './endpoints.ts'
 import {
   parseSpanishDate, ownerChain, draftOwner, valueOn, reconstructDraft,
+  datesBetween, calibrateDraftDate,
 } from './draft-history.ts'
 
 /**
@@ -175,5 +176,65 @@ describe('reconstruccion del reparto de toda la liga', () => {
     const r = reconstructDraft(conHueco, new Map(duennos).set(99999, 15531409), '2026-08-17')
     expect(r.missingValue).toEqual([99999])
     expect(r.valueByManager['15531409']).toBe(9_084_000 + 1_373_000)
+  })
+})
+
+describe('averiguar que dia fue el reparto', () => {
+  /**
+   * Aqui me equivoque en la primera version: tome la entrada mas antigua del
+   * feed como fecha del reparto. Pero el feed se remonta a la CREACION de la
+   * liga, que en esta fue nueve dias antes del sorteo, y valorar las
+   * plantillas con ese desfase metia un error de ocho cifras en la caja
+   * inicial de todos los managers.
+   *
+   * No hay que suponerla. La caja inicial de la cuenta propia la publica su
+   * libro, asi que se recorren los dias candidatos y se elige aquel en el que
+   * la reconstruccion da esa cifra exacta.
+   */
+  const ryan: PlayerDetail = {
+    owners: [],
+    values_chart: {
+      points: [
+        { value: 8_000_000, date: '8 ago 2026' },
+        { value: 9_084_000, date: '17 ago 2026' },
+        { value: 9_901_000, date: '8 sept 2026' },
+      ],
+    },
+  }
+  const detalles = new Map([[28612, ryan]])
+  const duennos = new Map([[28612, 15531409]])
+
+  it('enumera los dias del rango, incluidos los extremos', () => {
+    expect(datesBetween('2026-08-08', '2026-08-11'))
+      .toEqual(['2026-08-08', '2026-08-09', '2026-08-10', '2026-08-11'])
+  })
+
+  it('encuentra el dia que reproduce la plantilla conocida', () => {
+    const cal = calibrateDraftDate(
+      detalles, duennos, 15531409, 9_084_000,
+      datesBetween('2026-08-08', '2026-09-08'),
+    )
+    // Del 17 de agosto al 7 de septiembre el valor no cambia, asi que todos
+    // esos dias cuadran. Da igual cual se elija: la plantilla vale lo mismo.
+    expect(cal.matches[0]).toBe('2026-08-17')
+    expect(cal.matches).not.toContain('2026-08-08')
+    expect(cal.matches).not.toContain('2026-09-08')
+  })
+
+  it('no da por buena la fecha equivocada aunque sea la del inicio del feed', () => {
+    const cal = calibrateDraftDate(
+      detalles, duennos, 15531409, 9_084_000, ['2026-08-08'],
+    )
+    expect(cal.matches).toHaveLength(0)
+    expect(cal.best).toEqual({ date: '2026-08-08', error: 8_000_000 - 9_084_000 })
+  })
+
+  it('si ningun dia cuadra lo dice, en vez de coger el menos malo', () => {
+    const cal = calibrateDraftDate(
+      detalles, duennos, 15531409, 1_234_567,
+      datesBetween('2026-08-08', '2026-09-08'),
+    )
+    expect(cal.matches).toHaveLength(0)
+    expect(cal.best).not.toBeNull()
   })
 })

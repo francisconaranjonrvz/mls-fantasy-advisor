@@ -1,6 +1,6 @@
 import {
   MisterHttp, MisterEndpoints, authenticate, parsePlayerRows, parseStandingsMembers,
-  reconstructDraft, feedItemDate, type PlayerDetail,
+  reconstructDraft, calibrateDraftDate, datesBetween, feedItemDate, type PlayerDetail,
 } from '@mls/mister-client'
 import { MLS_LEAGUE } from '@mls/core'
 import { loadConfig } from './config.ts'
@@ -64,13 +64,17 @@ async function main(): Promise<void> {
     log('AVISO: el feed no llego al principio de temporada; la fecha del reparto puede estar mal')
   }
   const ahora = new Date()
-  const draftDate = draftDateFromFeed(items.map((it) => feedItemDate(it, ahora)))
-  if (!draftDate) {
-    console.error('[baseline] no se pudo datar el reparto desde el feed; se aborta')
+  const inicioFeed = draftDateFromFeed(items.map((it) => feedItemDate(it, ahora)))
+  if (!inicioFeed) {
+    console.error('[baseline] el feed no trae ninguna fecha utilizable; se aborta')
     process.exitCode = 1
     return
   }
-  log(`el feed arranca el ${draftDate}, que se toma como fecha del reparto`)
+  // El feed arranca cuando se CREO la liga, no cuando se reparto. En esta
+  // liga son nueve dias de diferencia, y valorar las plantillas con ese
+  // desfase metia un error de ocho cifras en la caja inicial de todos. La
+  // fecha buena se resuelve mas abajo contra la cuenta propia.
+  log(`el feed arranca el ${inicioFeed}; la fecha del reparto se calibra, no se supone`)
 
   // --- Que jugadores hay que consultar ---
   //
@@ -108,6 +112,51 @@ async function main(): Promise<void> {
   }
   log(`${detalles.size} fichas leidas (${fallos} fallos)`)
 
+  // --- Quien soy yo, que es contra quien se calibra ---
+  const misIds = parsePlayerRows(await api.getTeamHtml()).map((p) => p.id)
+  const votos = new Map<number, number>()
+  for (const id of misIds) {
+    const d = duennoHoy.get(id) ?? 0
+    if (d > 0) votos.set(d, (votos.get(d) ?? 0) + 1)
+  }
+  let selfId = 0
+  let mejorVoto = 0
+  for (const [id, n] of votos) if (n > mejorVoto) { mejorVoto = n; selfId = id }
+  if (selfId === 0) {
+    console.error('[baseline] no se pudo identificar tu cuenta; sin ella no hay con que calibrar')
+    process.exitCode = 1
+    return
+  }
+
+  const balance = await api.getBalance().catch(() => null)
+  const cajaObservada = observedInitialCashFromHistory(balance?.history ?? [])
+  if (cajaObservada === null) {
+    console.error('[baseline] tu libro no publica la caja inicial; sin ella no hay con que calibrar')
+    process.exitCode = 1
+    return
+  }
+  const plantillaPropia = MLS_LEAGUE.initialBudget - cajaObservada
+
+  // --- Que dia valoro Mister el reparto ---
+  const candidatas = datesBetween(inicioFeed, ahora.toISOString().slice(0, 10))
+  const cal = calibrateDraftDate(detalles, duennoHoy, selfId, plantillaPropia, candidatas)
+
+  if (cal.matches.length === 0) {
+    log(`ningun dia entre ${inicioFeed} y hoy reproduce tu plantilla inicial`)
+    log(`el mas cercano es ${cal.best?.date} y se queda en ${redacted(cal.best?.error ?? 0)}`)
+    console.error('[baseline] no falla la fecha, falla el metodo. No te fies de nada. Se aborta.')
+    process.exitCode = 1
+    return
+  }
+  if (cal.matches.length > 1) {
+    // Varios dias seguidos pueden dar la misma cifra si el mercado no movio
+    // ningun jugador tuyo entre ellos. Da igual cual se elija: la plantilla
+    // vale lo mismo en todos, que es lo unico que se usa.
+    log(`${cal.matches.length} dias reproducen tu plantilla (${cal.matches.join(', ')})`)
+  }
+  const draftDate = cal.matches[0]!
+  log(`fecha del reparto resuelta: ${draftDate}`)
+
   const reparto = reconstructDraft(detalles, duennoHoy, draftDate)
 
   // Un jugador que no se pudo valorar no se cuenta como cero: eso inflaria la
@@ -130,17 +179,6 @@ async function main(): Promise<void> {
   const members = parseStandingsMembers(await api.getStandingsHtml())
   const nombres = new Map(members.map((m) => [m.id, m.slug]))
 
-  // Quien soy yo: el manager que posee los jugadores que devuelve /team.
-  const misIds = parsePlayerRows(await api.getTeamHtml()).map((p) => p.id)
-  const votos = new Map<number, number>()
-  for (const id of misIds) {
-    const d = duennoHoy.get(id) ?? 0
-    if (d > 0) votos.set(d, (votos.get(d) ?? 0) + 1)
-  }
-  let selfId = 0
-  let mejor = 0
-  for (const [id, n] of votos) if (n > mejor) { mejor = n; selfId = id }
-
   log('')
   log('reparto reconstruido:')
   const filas = Object.entries(reparto.valueByManager).sort((a, b) => b[1] - a[1])
@@ -151,23 +189,18 @@ async function main(): Promise<void> {
       redacted(valor)}  caja ${redacted(caja)}${marca}`)
   }
 
-  // El contraste que da valor a todo lo demas: la caja inicial propia se
-  // conoce por el libro de movimientos, asi que si el metodo la reproduce vale
-  // para los nueve rivales, donde no hay con que comprobar.
+  // La fecha se eligio para que tu cuenta cuadre, asi que verla en cero aqui
+  // no prueba nada por si sola: lo que la hace valida es que UN SOLO dia entre
+  // los treinta candidatos reproduzca la cifra exacta, y que ese dia sea el
+  // mismo para todos los managers. Se vuelve a comprobar por si acaso.
   log('')
-  const balance = await api.getBalance().catch(() => null)
-  const cajaObservada = observedInitialCashFromHistory(balance?.history ?? [])
-  if (selfId === 0) {
-    log('CONTRASTE: no se pudo identificar tu cuenta; el baseline queda sin verificar')
-  } else if (cajaObservada === null) {
-    log('CONTRASTE: tu libro no publica el apunte de caja inicial; queda sin verificar')
-  } else {
-    const reconstruida = MLS_LEAGUE.initialBudget - (reparto.valueByManager[String(selfId)] ?? 0)
-    const error = reconstruida - cajaObservada
-    log(`CONTRASTE contra tu cuenta: error ${error === 0 ? 'CERO, exacto' : redacted(error)}`)
-    if (error !== 0) {
-      log('el reparto reconstruido NO reproduce tu caja inicial: no te fies de los rivales')
-    }
+  const reconstruida = MLS_LEAGUE.initialBudget - (reparto.valueByManager[String(selfId)] ?? 0)
+  const error = reconstruida - cajaObservada
+  log(`CONTRASTE contra tu cuenta: error ${error === 0 ? 'CERO, exacto' : redacted(error)}`)
+  if (error !== 0) {
+    console.error('[baseline] la reconstruccion no cuadra con la fecha calibrada; se aborta')
+    process.exitCode = 1
+    return
   }
 
   if (dryRun) {

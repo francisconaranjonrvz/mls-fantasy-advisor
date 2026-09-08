@@ -148,3 +148,61 @@ export function reconstructDraft(
 
   return { valueByManager, players, missingValue }
 }
+
+/** Todos los dias entre dos fechas ISO, inclusive. */
+export function datesBetween(desde: string, hasta: string): string[] {
+  const out: string[] = []
+  const d = new Date(`${desde}T00:00:00Z`)
+  const fin = new Date(`${hasta}T00:00:00Z`)
+  while (d <= fin) {
+    out.push(d.toISOString().slice(0, 10))
+    d.setUTCDate(d.getUTCDate() + 1)
+  }
+  return out
+}
+
+export interface DraftDateCalibration {
+  /** Fechas que reproducen exactamente la plantilla inicial conocida. */
+  matches: string[]
+  /** La mejor de todas, y de cuanto se queda si ninguna cuadra. */
+  best: { date: string; error: number } | null
+}
+
+/**
+ * Averigua QUE DIA valoro Mister el reparto, en vez de suponerlo.
+ *
+ * Aqui me equivoque primero: tome la entrada mas antigua del feed como fecha
+ * del reparto, y el feed se remonta a la creacion de la liga, nueve dias antes
+ * del sorteo. Valorar las plantillas con nueve dias de desfase metia un error
+ * de ocho cifras en la caja inicial de todos.
+ *
+ * No hace falta suponerlo. La caja inicial de la cuenta propia la publica su
+ * libro de movimientos, asi que la plantilla que le repartieron es un dato
+ * conocido: presupuesto menos esa caja. Basta recorrer los dias candidatos y
+ * quedarse con aquel en el que la reconstruccion da esa cifra exacta.
+ *
+ * Es un ajuste de un solo parametro contra una observacion exacta, y despues
+ * queda verificado para los nueve rivales, que es donde no hay con que
+ * comprobar. Si ningun dia cuadra, se dice: significa que falla el metodo y no
+ * la fecha, y entonces no hay que fiarse de nada.
+ */
+export function calibrateDraftDate(
+  details: Map<number, PlayerDetail>,
+  currentOwner: Map<number, number>,
+  selfId: number,
+  knownSelfSquadValue: number,
+  candidates: string[],
+): DraftDateCalibration {
+  const matches: string[] = []
+  let best: { date: string; error: number } | null = null
+
+  for (const date of candidates) {
+    const r = reconstructDraft(details, currentOwner, date)
+    const valor = r.valueByManager[String(selfId)] ?? 0
+    const error = valor - knownSelfSquadValue
+    if (error === 0) matches.push(date)
+    if (!best || Math.abs(error) < Math.abs(best.error)) best = { date, error }
+  }
+
+  return { matches, best }
+}
