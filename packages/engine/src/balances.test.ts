@@ -595,3 +595,61 @@ describe('cuando ya no queda nada que suponer, se dice', () => {
     expect(e.exact).toBe(false)
   })
 })
+
+describe('no declarar dudas que ya no existen', () => {
+  /**
+   * Con el reparto reconstruido, los nueve rivales pasaron a tener el saldo
+   * exacto y a la vez seguian declarando una duda sobre el. Las dos cosas no
+   * pueden ser ciertas, y quien lee el informe no sabe a cual hacer caso: una
+   * cifra buena marcada como dudosa se usa igual de mal que una mala.
+   */
+  const base = {
+    managerId: 5,
+    transactions: [{ ...tx('purchase', M(-8)), date: '2026-08-20T05:00:00Z' }],
+    historyComplete: true,
+    teamValue: M(50),
+    averageLineupValue: M(30),
+    jornadaRanks: [],
+    quinielaObserved: true,
+    initialSquadValue: M(37.5),
+  }
+
+  it('si el gasto en clausulas se conoce exacto, no es una incognita', () => {
+    // Desde que la ficha publica clause.multiplier el gasto se calcula, no se
+    // acota: maximo y minimo son el mismo numero.
+    const e = reconstructBalance(
+      { ...base, maxClauseSpend: M(2), minClauseSpend: M(2) },
+      MLS_LEAGUE,
+    )
+    expect(e.unknowns.join(' ')).not.toMatch(/subidas de clausula/)
+    expect(e.exact).toBe(true)
+    // Y se ha descontado igualmente: no declararlo no es ignorarlo.
+    expect(e.estimate).toBe(M(12.5) - M(8) - M(2))
+  })
+
+  it('si de verdad esta acotado entre dos cifras, si lo declara', () => {
+    const e = reconstructBalance(
+      { ...base, maxClauseSpend: M(3), minClauseSpend: M(1) },
+      MLS_LEAGUE,
+    )
+    expect(e.unknowns.join(' ')).toMatch(/subidas de clausula/)
+    expect(e.exact).toBe(false)
+  })
+
+  it('con el reparto conocido, la solvencia no culpa al reparto', () => {
+    // Antes decia "no cuadra con el reparto inicial SUPUESTO". Cuando el
+    // reparto es dato, esa frase manda a mirar donde no es.
+    const imposible = reconstructBalance(
+      {
+        ...base,
+        transactions: [{ ...tx('buyout_signing', -M(60)), date: '2026-08-20T05:00:00Z' }],
+        teamValue: M(40),
+      },
+      MLS_LEAGUE,
+    )
+    const texto = imposible.unknowns.join(' ')
+    if (texto.includes('margen de deuda') || texto.includes('solvencia')) {
+      expect(texto).not.toMatch(/reparto inicial supuesto/)
+    }
+  })
+})

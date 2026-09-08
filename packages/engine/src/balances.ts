@@ -356,9 +356,18 @@ export function reconstructBalance(
     const maxGasto = ledger.maxClauseSpend ?? (
       ledger.historyComplete ? 0 : Math.round(ledger.teamValue * 0.4)
     )
+    const minGasto = ledger.minClauseSpend ?? 0
     low -= maxGasto
-    high -= ledger.minClauseSpend ?? 0
-    if (maxGasto > 0) {
+    high -= minGasto
+    // Solo es una incognita si de verdad queda acotado entre dos cifras.
+    //
+    // Desde que la ficha del manager publica clause.multiplier, el gasto se
+    // CALCULA: 0,2 x base x tramos. Entonces el maximo y el minimo son el
+    // mismo numero y no hay nada que dudar. La condicion miraba solo si el
+    // gasto era mayor que cero, asi que los nueve rivales salian con el saldo
+    // exacto y a la vez declarando una duda sobre el, que es contradictorio y
+    // hace desconfiar de una cifra que es buena.
+    if (maxGasto > minGasto) {
       unknowns.push('las subidas de clausula no se publican; se acotan con las clausulas visibles')
     }
   }
@@ -452,9 +461,19 @@ export function reconstructBalance(
       // deja el intervalo como esta y se declara la inconsistencia. Ensanchar
       // hasta cubrir las dos no informa de nada, solo devuelve un intervalo
       // tan ancho que no sirve para decidir.
+      // El mensaje depende de si el reparto es dato o suposicion, porque la
+      // conclusion es distinta. Con el reparto supuesto, lo mas probable es
+      // que falle la suposicion. Con el reparto reconstruido desde la cadena
+      // de propietarios, la suposicion ya no existe y lo que chirria es otra
+      // cosa: probablemente el margen de deuda, que se modela sobre el valor
+      // de equipo de HOY porque el de entonces no se publica.
       unknowns.push(
-        'la solvencia observada no cuadra con el reparto inicial supuesto para este manager; ' +
-          'manda lo observado, pero su saldo es menos fiable que el del resto',
+        known0
+          ? 'el minimo por el que paso su saldo queda por debajo del margen de deuda que se le ' +
+            'calcula; el reparto inicial es dato, asi que lo que no encaja es ese margen, que se ' +
+            'modela sobre el valor de equipo de hoy y no sobre el de entonces'
+          : 'la solvencia observada no cuadra con el reparto inicial supuesto para este manager; ' +
+            'manda lo observado, pero su saldo es menos fiable que el del resto',
       )
     } else if (sueloFinal > low) {
       low = sueloFinal
