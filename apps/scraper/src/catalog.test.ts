@@ -60,6 +60,26 @@ describe('normalizePlayer', () => {
     expect(normalizePlayer(RAPHINHA)?.streak).toEqual([8, 18, 18, 12])
   })
 
+  it('una jornada sin jugar vale cero, no se descarta', () => {
+    /**
+     * El "-" de Mister es "no jugo ese partido", y para ti eso son cero
+     * puntos. Antes se filtraba fuera de la racha, asi que un jugador con
+     * ["-","-","-",11] quedaba con la racha [11] y el modelo le proyectaba
+     * once puntos POR JORNADA en vez de once en cuatro.
+     *
+     * Afectaba a 291 de los 525 jugadores del catalogo. Marrero, un portero de
+     * 228.000 que jugo uno de cuatro partidos, salia proyectado por encima de
+     * uno de 9.901.000, y el asesor recomendaba pagar su clausula.
+     */
+    const marrero = owned({ streak: ['-', '-', '-', 11, '-'] })
+    expect(normalizePlayer(marrero)?.streak).toEqual([0, 11, 0, 0, 0])
+  })
+
+  it('el que no ha jugado ninguna se queda en ceros, no sin racha', () => {
+    const nunca = owned({ streak: ['-', '-', '-'] })
+    expect(normalizePlayer(nunca)?.streak).toEqual([0, 0, 0])
+  })
+
   it('deriva la tendencia comparando el valor con el anterior', () => {
     expect(normalizePlayer(RAPHINHA)?.trend).toBe('up')
     expect(normalizePlayer(owned({ value: 100, prev_value: 200 }))?.trend).toBe('down')

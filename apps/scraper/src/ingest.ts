@@ -549,8 +549,24 @@ export function normalizePlayer(raw: RawPlayerRecord): Player | null {
 
   // La racha llega de la jornada mas antigua a la mas reciente; el resto del
   // codigo la quiere al reves, con lo ultimo primero.
+  // Un "-" en la racha es una jornada que NO jugo, y vale cero puntos, no
+  // "dato ausente". Antes se filtraban esas entradas y se caian de la racha,
+  // asi que un jugador que puntuo 11 en su unico partido de cuatro quedaba con
+  // la racha [11] y el modelo le proyectaba once puntos POR JORNADA.
+  //
+  // No era un caso raro: 291 de los 525 jugadores del catalogo tienen algun
+  // hueco, y 44 de los 125 que tienen duenno. Lemar salia a 14 puntos por
+  // jornada y Marrero, un portero de 228.000, por encima de uno de 9,9M.
+  //
+  // Que el hueco es "no jugo" y no "no se sabe" esta comprobado contra los
+  // datos: las entradas numericas coinciden con las apariciones que declara
+  // Mister (puntos/media) en 394 de 397 casos, y la racha suma exactamente los
+  // puntos del jugador en 522 de 525.
   const streak = Array.isArray(raw.streak)
-    ? [...raw.streak].map((n) => Math.round(Number(n))).filter((n) => Number.isFinite(n)).reverse()
+    ? [...raw.streak].map((v) => {
+        const n = Number(v)
+        return Number.isFinite(n) ? Math.round(n) : 0
+      }).reverse()
     : undefined
 
   const fixture = raw.match_info

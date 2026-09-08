@@ -125,7 +125,7 @@ export function hasPlayed(player: Player, ctx: ValuationContext): boolean {
  */
 export function observedPointsPerJornada(player: Player, ctx: ValuationContext): number | null {
   const streak = player.streak
-  if (streak && streak.length > 0) {
+  if (streak && streak.length > 0 && streakCoversSeason(player)) {
     let num = 0
     let den = 0
     streak.forEach((pts, i) => {
@@ -137,6 +137,27 @@ export function observedPointsPerJornada(player: Player, ctx: ValuationContext):
   }
   if (ctx.jornadasPlayed > 0) return player.points / ctx.jornadasPlayed
   return null
+}
+
+/**
+ * Si la racha da cuenta de TODOS los puntos del jugador.
+ *
+ * La racha es el historial del club, jornada a jornada, con un cero en las que
+ * el jugador no aparecio. Cuando suma sus puntos, describe la temporada entera
+ * y se puede ponderar por recencia. Cuando no, es que la ventana no cubre toda
+ * su temporada, y el caso tipico es el que ha cambiado de club: la racha solo
+ * trae lo del club actual.
+ *
+ * Contra el catalogo real cuadra en 522 de 525. Para los tres que no, fiarse de
+ * la racha seria peor que no tenerla: Pablo Garcia lleva 25 puntos y su racha
+ * solo recoge 11, asi que ponderarla lo hundiria. En esos se vuelve a la media
+ * por jornada, que cuenta igual las jornadas sin jugar pero no se inventa
+ * cuando ocurrieron.
+ */
+export function streakCoversSeason(player: Player): boolean {
+  const streak = player.streak
+  if (!streak || streak.length === 0) return false
+  return streak.reduce((a, b) => a + b, 0) === player.points
 }
 
 /**

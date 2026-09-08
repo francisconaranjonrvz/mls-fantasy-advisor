@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { M, MLS_LEAGUE, type OwnedPlayer, type Player, type Position } from '@mls/core'
 import { buildValuationContext, expectedRemainingPoints } from './valuation.ts'
-import { marginalGain, costPerPoint, marketBenchmark } from './marginal.ts'
+import { marginalGain, costPerPoint, marketBenchmark, rankMarketBuys } from './marginal.ts'
 import { optimizeLineup } from './lineup.ts'
 
 /**
@@ -245,5 +245,42 @@ describe('la penalizacion por hueco no es merito del fichaje', () => {
     // Desplaza a un mediocre, asi que aporta la diferencia, no su total.
     expect(gain.remaining).toBeLessThan(expectedRemainingPoints(jugador('MF', 40), CTX))
     expect(gain.remaining).toBeGreaterThan(0)
+  })
+})
+
+describe('a quien ya tienes no lo puedes fichar', () => {
+  /**
+   * En Mister puedes poner a tus propios jugadores en venta, y entonces salen
+   * en el mercado como cualquier otro. El asesor recomendaba fichar a Hancko,
+   * que ya estaba en la plantilla, por 8.587.000, que era el precio al que yo
+   * mismo lo habia puesto a la venta.
+   *
+   * El fallo de fondo era peor que la recomendacion absurda: al anadirlo se
+   * colaba dos veces en la plantilla y el optimizador le contaba los puntos
+   * por duplicado, asi que la ganancia que le atribuia era enorme.
+   */
+  it('no aporta nada, y sobre todo no cuenta dos veces', () => {
+    const squad = plantillaBase()
+    const suyo = squad.find((p) => p.position === 'FW')!
+
+    const gain = marginalGain(suyo, squad, CTX, MLS_LEAGUE)
+
+    expect(gain.remaining).toBe(0)
+    expect(gain.perJornada).toBe(0)
+    expect(gain.entersLineup).toBe(false)
+  })
+
+  it('el mercado no lo ofrece como fichaje', () => {
+    const squad = plantillaBase()
+    const suyo = squad.find((p) => p.position === 'MF')!
+    const ajeno = jugador('MF', 40, { ownerId: 2 })
+
+    const ofertas = [
+      { player: suyo, price: M(1) },
+      { player: ajeno, price: M(1) },
+    ]
+    const compras = rankMarketBuys(ofertas, squad, CTX, MLS_LEAGUE, M(50))
+
+    expect(compras.map((c) => c.player.id)).toEqual([ajeno.id])
   })
 })

@@ -78,6 +78,18 @@ export function marginalGain(
   config: LeagueConfig,
   baseline?: LineupPlan,
 ): MarginalGain {
+  // A quien ya tienes no lo puedes fichar, y preguntarlo no es inofensivo: al
+  // anadirlo se cuela DOS VECES en la plantilla, el optimizador lo pone en dos
+  // huecos de su posicion y le cuenta los puntos por duplicado.
+  //
+  // Pasaba de verdad. En Mister puedes poner a los tuyos en venta, y entonces
+  // salen en el mercado como cualquier otro: el asesor recomendaba fichar a
+  // Hancko, que ya era de la plantilla, por 8.587.000 que era su propio precio
+  // de venta.
+  if (squad.some((p) => p.id === candidate.id)) {
+    return { perJornada: 0, remaining: 0, entersLineup: false, gapRelief: 0 }
+  }
+
   const sinEl = baseline ?? optimizeLineup(squad, ctx, config).best
   const conEl = optimizeLineup(
     [...squad, asOwned(candidate, squad[0]?.ownerId ?? 0)],
@@ -184,8 +196,12 @@ export function rankMarketBuys(
   const baseline = optimizeLineup(squad, ctx, config).best
   const out: MarketBuy[] = []
 
+  const yaEsTuyo = new Set(squad.map((p) => p.id))
+
   for (const offer of offers) {
     if (offer.price > capacity || offer.price <= 0) continue
+    // Los tuyos puestos en venta aparecen en el mercado igual que los demas.
+    if (yaEsTuyo.has(offer.player.id)) continue
     const gain = marginalGain(offer.player, squad, ctx, config, baseline)
     if (gain.remaining <= 0) continue
     out.push({ ...offer, gain, costPerPoint: costPerPoint(offer.price, gain) })
