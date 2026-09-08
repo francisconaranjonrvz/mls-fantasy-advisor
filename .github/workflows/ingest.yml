@@ -1,10 +1,12 @@
 name: Ingesta diaria
 
-# Mister publica sus horarios en UTC+1 y no esta confirmado si los desplaza con
-# el horario de verano (docs/INCOGNITAS.md punto 4). En lugar de apostar, se
-# cubren las dos lecturas: 04:20 y 05:20 UTC para el ciclo de las 05:00, y
-# 16:20 y 17:20 UTC para la oferta adicional de las 17:00. Ejecutar de mas es
-# gratis en un repositorio publico, y el job es idempotente.
+# Mister resuelve el mercado a las 05:00 y saca su oferta a las 17:00, HORA
+# ESPANOLA (docs/INCOGNITAS.md punto 4). En UTC eso son las 03:00 y 15:00 en
+# verano, y las 04:00 y 16:00 en invierno.
+#
+# Las cuatro pasadas cubren las dos estaciones: 04:20 y 16:20 llegan 80 minutos
+# despues en verano y 20 en invierno, y las de 05:20 y 17:20 son el respaldo
+# por si Mister se retrasa. Ejecutar de mas es gratis y el job es idempotente.
 on:
   schedule:
     - cron: '20 4,5,16,17 * * *'
@@ -103,6 +105,36 @@ jobs:
           THROTTLE_MS: '2500'
           DATA_DIR: ${{ inputs.dry_run && 'data' || 'data-repo/data' }}
         run: node apps/scraper/src/main.ts ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      # Lo que hace que el sistema aguante una temporada sin que nadie lo toque.
+      #
+      # La credencial de larga duracion es la cookie refresh-token. Su
+      # vencimiento declarado esta en 2125, asi que no caduca sola; el riesgo
+      # es que Mister la ROTE. Si la rota, el secret guardado se queda viejo y
+      # la ingesta de manana entra con una credencial muerta.
+      #
+      # El scraper detecta la rotacion y deja la nueva en un fichero. Aqui se
+      # escribe encima del secret. Nunca pasa por el log: `gh secret set` lee
+      # de un fichero y GitHub cifra el valor antes de guardarlo.
+      #
+      # Necesita un token con permiso de escritura sobre los secrets del
+      # repositorio; el GITHUB_TOKEN por defecto no lo tiene.
+      - name: Renovar el secret de sesion si Mister la roto
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ secrets.SESSION_ROTATE_TOKEN }}
+        run: |
+          if [ ! -f session-renewed.txt ]; then
+            echo "La sesion no cambio; no hay nada que renovar."
+            exit 0
+          fi
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::Mister roto la sesion pero falta el secret SESSION_ROTATE_TOKEN, asi que no se puede guardar la nueva. La proxima ingesta fallara. Vuelve a capturar la sesion a mano."
+            exit 0
+          fi
+          gh secret set MISTER_SESSION < session-renewed.txt
+          echo "::notice::Mister roto la sesion y el secret MISTER_SESSION se ha actualizado solo."
+          rm -f session-renewed.txt
 
       - name: Commitear los datos en el repositorio privado
         if: ${{ !inputs.dry_run }}

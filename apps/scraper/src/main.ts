@@ -30,6 +30,14 @@ import { MisterSessionExpiredError } from '@mls/mister-client'
  * esquema invalido se llevaba a la tumba la explicacion de lo que habia
  * fallado.
  */
+/**
+ * Donde se deja la sesion renovada para que la recoja el workflow.
+ *
+ * Fuera del repositorio de datos a proposito: eso se commitea, y una
+ * credencial no se commitea ni en un repositorio privado.
+ */
+const SESSION_RENEWED_FILE = 'session-renewed.txt'
+
 function dumpWarnings(warnings: string[]): void {
   if (warnings.length === 0) return
   console.warn('')
@@ -100,6 +108,22 @@ async function main(): Promise<void> {
     feedSelfTransactions,
   )
   console.log('\n' + renderConsoleSummary(diagnosis) + '\n')
+
+  // La sesion renovada se persiste ANTES que los datos y aunque sea dry-run.
+  //
+  // Es una credencial, no un dato: si Mister la roto durante esta ejecucion, la
+  // vieja ya no vale y perderla significa que el sistema deja de funcionar
+  // manana. Escribirla no depende de si esta ingesta escribe o no.
+  //
+  // Va a un fichero fuera del repositorio de datos y nunca al log. El log de
+  // un repositorio publico es publico, y esta cookie da acceso a la cuenta.
+  if (result.renewedSession) {
+    writeText(SESSION_RENEWED_FILE, result.renewedSession)
+    console.log(
+      `[main] Mister roto la sesion. Escrita en ${SESSION_RENEWED_FILE} para ` +
+        'que el workflow actualice el secret MISTER_SESSION.',
+    )
+  }
 
   if (config.dryRun) {
     dumpWarnings(warnings)

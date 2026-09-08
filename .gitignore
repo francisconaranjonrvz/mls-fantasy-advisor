@@ -37,3 +37,7 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 *.log
+
+# Sesion renovada que deja la ingesta para que el workflow reescriba el
+# secret. Es una credencial: no se commitea nunca.
+session-renewed.txt

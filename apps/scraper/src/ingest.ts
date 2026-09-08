@@ -45,6 +45,24 @@ export interface IngestResult {
    * aritmetica pero no el metodo.
    */
   feedSelfTransactions: Transaction[]
+  /**
+   * La sesion tal como quedo al terminar, si Mister la cambio por el camino.
+   *
+   * Es lo que hace que el sistema aguante una temporada sin intervencion. La
+   * credencial de larga duracion es la cookie `refresh-token`, y el riesgo no
+   * es que caduque -su vencimiento declarado esta en 2125- sino que Mister la
+   * ROTE: si la cambia por otra, el secret guardado se queda viejo y la
+   * siguiente ejecucion entra con una credencial muerta.
+   *
+   * En memoria eso ya se maneja: absorbSetCookie se queda con la nueva y el
+   * resto del proceso sigue. Pero al acabar el proceso se pierde, y la
+   * ejecucion siguiente vuelve a arrancar del secret viejo. Devolverla aqui
+   * permite que el workflow reescriba el secret, y entonces la rotacion deja
+   * de ser un problema y pasa a ser algo que ocurre y se absorbe.
+   *
+   * undefined si no cambio, que es el caso normal.
+   */
+  renewedSession?: string | undefined
   /** Si el feed llego al principio de temporada. Decide si el saldo es exacto. */
   feedComplete: boolean
   balance: BalanceInfo | null
@@ -120,6 +138,8 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   )
   if (config.leagueId) http.leagueId = config.leagueId
   log(`autenticado por ${method} (liga ${http.leagueId ?? 'sin detectar'})`)
+  // Se guarda para poder detectar al final si Mister la ha rotado.
+  const refreshInicial = leerRefreshToken(http.cookieHeader)
 
   // La cabecera x-league viaja en todas las llamadas a /ajax/sw. Si el id es
   // erroneo el servidor no falla de forma evidente: devuelve vacio, y el
@@ -405,6 +425,14 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     players,
   }
 
+  // Si Mister roto la credencial de larga duracion por el camino, se devuelve
+  // para que quien llama pueda persistirla. Nunca se registra en el log: es
+  // una credencial, y el log de un repositorio publico es publico.
+  const refreshFinal = leerRefreshToken(http.cookieHeader)
+  const renewedSession =
+    refreshFinal && refreshFinal !== refreshInicial ? http.cookieHeader : undefined
+  if (renewedSession) log('Mister roto la sesion durante la ingesta; se devuelve la nueva')
+
   return {
     snapshot,
     transactions,
@@ -415,7 +443,17 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     progression,
     warnings,
     enrichedCount,
+    renewedSession,
   }
+}
+
+/** El valor de la cookie de larga duracion dentro de una cabecera Cookie. */
+export function leerRefreshToken(cookieHeader: string): string | null {
+  for (const parte of cookieHeader.split(';')) {
+    const [k, ...resto] = parte.trim().split('=')
+    if (k === 'refresh-token' && resto.length > 0) return resto.join('=')
+  }
+  return null
 }
 
 /**
