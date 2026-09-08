@@ -180,6 +180,21 @@ describe('quiniela: resulta que si es observable', () => {
     expect(txs.map((t) => t.managerId)).not.toContain(15531385)
   })
 
+  it('pero SI aparece en la tabla, y eso es lo que la hace observable', () => {
+    /**
+     * La distincion importa mas de lo que parece. Un cero en la quiniela es un
+     * dato publicado, no un hueco: la tabla trae a los diez con sus aciertos.
+     *
+     * Derivar "observada" de los cobros dejaba fuera a quien no acerto ni una,
+     * y a ese se le sumaban 250.000 de incertidumbre por jornada. A final de
+     * temporada son casi diez millones sobre una cifra que estaba publicada, y
+     * bastaba para que su saldo no pudiera declararse exacto.
+     */
+    const pools = poolsFromFeed([QUINIELA])
+    expect(pools.map((p) => p.managerId)).toContain(15531385)
+    expect(pools.find((p) => p.managerId === 15531385)).toMatchObject({ hits: 0, amount: 0 })
+  })
+
   it('fecha el cobro con la del cierre de jornada, no con la de hoy', () => {
     const txs = poolsToTransactions([QUINIELA])
     expect(txs[0]!.date).toBe('2026-09-01T08:45:39.000Z')

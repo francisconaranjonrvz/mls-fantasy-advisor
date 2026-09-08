@@ -1,7 +1,7 @@
 import {
   MisterHttp, MisterEndpoints, authenticate, parsePlayerRows, parseSquad, parseMarket,
   parseStandingsMembers, parseCurrentJornada, movementsToTransactions,
-  transfersToTransactions, poolsToTransactions, paymentsToTransactions,
+  transfersToTransactions, poolsToTransactions, poolsFromFeed, paymentsToTransactions,
   clauseChangesToTransactions,
   readClause, readPurchasePrice,
 } from '@mls/mister-client'
@@ -63,6 +63,17 @@ export interface IngestResult {
    * undefined si no cambio, que es el caso normal.
    */
   renewedSession?: string | undefined
+  /**
+   * Managers cuya quiniela se ha podido OBSERVAR en el feed.
+   *
+   * No es lo mismo que "managers que cobraron". El feed publica la tabla
+   * entera al cerrar cada jornada, con los diez y sus aciertos, asi que un
+   * cero es un dato observado, no un hueco. Derivarlo de los cobros trataba a
+   * quien no acerto nunca como una incognita y le sumaba 250.000 de
+   * incertidumbre por jornada, que a final de temporada son casi diez
+   * millones sobre una cifra que estaba publicada.
+   */
+  quinielaObservedFor: number[]
   /** Si el feed llego al principio de temporada. Decide si el saldo es exacto. */
   feedComplete: boolean
   balance: BalanceInfo | null
@@ -326,6 +337,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
   // que el metodo aplicado a los rivales funciona: se reconstruye tu saldo con
   // ellos, a ciegas, y se compara con el real.
   let feedSelfTransactions: Transaction[] = []
+  const quinielaObservedFor = new Set<number>()
   try {
     const { items, complete } = await api.getAllFeed()
     feedComplete = complete
@@ -348,6 +360,13 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     // resolverlas contra el instante del snapshot y no contra el reloj de cada
     // llamada, para que dos apuntes de la misma pasada sean comparables.
     const ahora = new Date(snapshotAt)
+
+    // Quien aparece en alguna tabla de quiniela, cobrara o no. Es lo que
+    // permite tratar un cero como dato observado en vez de como incognita: el
+    // feed publica la tabla entera al cerrar cada jornada, con los diez y sus
+    // aciertos. Derivarlo de los cobros dejaba fuera a quien no acerto nunca.
+    for (const fila of poolsFromFeed(items)) quinielaObservedFor.add(fila.managerId)
+
     const todos = [
       ...transfersToTransactions(items, ahora),
       ...poolsToTransactions(items, ahora),
@@ -444,6 +463,7 @@ export async function ingest(config: ScraperConfig): Promise<IngestResult> {
     warnings,
     enrichedCount,
     renewedSession,
+    quinielaObservedFor: [...quinielaObservedFor],
   }
 }
 

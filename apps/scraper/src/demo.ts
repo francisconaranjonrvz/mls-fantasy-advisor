@@ -166,6 +166,8 @@ export function buildDemoSnapshot(): DemoData {
     // La demo simula el caso bueno: historial completo desde el reparto.
     feedComplete: true,
     feedSelfTransactions: [],
+    // Los diez aparecen en la tabla de la quiniela, cobraran o no.
+    quinielaObservedFor: managers.map((m) => m.id),
     // Progresion sintetica: diez jornadas cerradas y un puesto por manager en
     // cada una, para que la demo ejercite tambien las bonificaciones exactas.
     progression: {

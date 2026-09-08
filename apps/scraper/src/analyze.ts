@@ -170,6 +170,12 @@ export function analyze(
   feedComplete = false,
   /** Tus apuntes segun el feed, para la verificacion a ciegas. */
   feedSelfTransactions: Transaction[] = [],
+  /**
+   * Managers cuya quiniela se ha podido observar en el feed, cobraran o no.
+   * Vacio significa que no se pudo leer ninguna tabla, y entonces se cae en la
+   * inferencia antigua a partir de los cobros.
+   */
+  quinielaObservedFor: number[] = [],
 ): Diagnosis {
   const config = MLS_LEAGUE
 
@@ -216,10 +222,20 @@ export function analyze(
     (t) => t.type === 'bonus' && t.managerId === snapshot.selfId,
   ).length
 
-  // De quien se han visto cobros de quiniela en el feed. Sin esto habria que
-  // seguir tratandola como incognita aunque los apuntes ya esten en el libro.
+  // De quien se ha podido OBSERVAR la quiniela, que no es lo mismo que de
+  // quien cobro.
+  //
+  // Aqui se construia con los apuntes de cobro, y eso dejaba fuera a quien no
+  // acerto ni una: sin cobro no hay apunte, asi que se le trataba como
+  // incognita y se le sumaban 250.000 de incertidumbre por jornada. A final de
+  // temporada son casi diez millones sobre una cifra que el feed publica.
+  //
+  // El dato bueno es quien aparece en la tabla de la quiniela, cobrara o no,
+  // y eso viene de la ingesta.
   const quinielaVista = new Set(
-    transactions.filter((t) => t.type === 'quiniela').map((t) => t.managerId),
+    quinielaObservedFor.length > 0
+      ? quinielaObservedFor
+      : transactions.filter((t) => t.type === 'quiniela').map((t) => t.managerId),
   )
 
   // Puestos por jornada, indexados por manager.

@@ -106,6 +106,7 @@ async function main(): Promise<void> {
     progression,
     feedComplete,
     feedSelfTransactions,
+    result.quinielaObservedFor ?? [],
   )
   console.log('\n' + renderConsoleSummary(diagnosis) + '\n')
 
