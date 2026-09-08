@@ -387,10 +387,31 @@ export function reconstructBalance(
 
   const constraintsApplied: string[] = []
 
-  // Nadie puede empezar una jornada en negativo y aun asi puntuar.
-  if ((ledger.scoredJornadas?.length ?? 0) > 0 && low < 0) {
-    low = 0
-    constraintsApplied.push('puntuo en alguna jornada, luego no arranco en negativo')
+  // El suelo del saldo NO es cero: es el margen de deuda.
+  //
+  // Aqui daba por hecho que quien puntua no puede estar en negativo, y eso es
+  // sencillamente falso. Mister deja el saldo en rojo hasta el 25% del valor
+  // de equipo, y no impide jugar: la cuenta propia estaba a -4.282.469 siendo
+  // lider de la liga con 154 puntos.
+  //
+  // Como el saldo estimado es el centro del intervalo, cortar el minimo en
+  // cero lo empujaba hacia arriba en la mitad de lo cortado. En cuanto la
+  // cuenta propia se puso en negativo, la verificacion a ciegas se fue de
+  // -194.200 a +7.069.704 y salio del intervalo. Reconstruida a mano desde el
+  // feed la misma cuenta daba -3,76M, o sea que fallaba el modelo, no el dato.
+  //
+  // Se sube al suelo pero nunca por encima del techo: si la reconstruccion
+  // entera cae por debajo del margen, el que no cuadra es el modelo, y de eso
+  // se ocupa mas abajo la comprobacion de solvencia. Invertir el intervalo
+  // aqui solo taparia esa contradiccion.
+  const sueloDeDeuda = -Math.round(ledger.teamValue * config.maxDebtPctOfTeamValue)
+  if (low < sueloDeDeuda) {
+    low = Math.min(sueloDeDeuda, high)
+    constraintsApplied.push(
+      `el saldo no puede bajar del margen de deuda (${Math.round(
+        config.maxDebtPctOfTeamValue * 100,
+      )}% del valor de equipo)`,
+    )
   }
 
   // Cada desembolso observado demuestra que tenia con que pagarlo, pero EN SU

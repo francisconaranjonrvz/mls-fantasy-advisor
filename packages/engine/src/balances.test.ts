@@ -120,7 +120,15 @@ describe('propagacion de la incertidumbre', () => {
 })
 
 describe('restricciones del juego que estrechan el intervalo', () => {
-  it('si puntuo, no pudo arrancar la jornada en negativo', () => {
+  it('el suelo del saldo es el margen de deuda, no el cero', () => {
+    /**
+     * Aqui habia una premisa falsa: que quien puntua no puede estar en rojo.
+     * Mister deja el saldo negativo hasta el 25% del valor de equipo y no
+     * impide jugar. La cuenta propia estaba a -4.282.469 siendo lider con 154
+     * puntos, y como el saldo estimado es el centro del intervalo, cortar el
+     * minimo en cero lo empujaba hacia arriba: la verificacion a ciegas se fue
+     * de -194.200 a +7.069.704.
+     */
     const e = reconstructBalance(
       {
         managerId: 3,
@@ -134,8 +142,8 @@ describe('restricciones del juego que estrechan el intervalo', () => {
       },
       MLS_LEAGUE,
     )
-    expect(e.low).toBeGreaterThanOrEqual(0)
-    expect(e.constraintsApplied.join(' ')).toMatch(/negativo/)
+    // 25% de un equipo de 50M son 12,5M de deuda permitida.
+    expect(e.low).toBeGreaterThanOrEqual(-M(12.5))
   })
 
   it('un desembolso grande demuestra un suelo, pero de la caja de PARTIDA', () => {
@@ -285,9 +293,31 @@ describe('intervalos acotados por las reglas, no a bulto', () => {
     expect(Number.isFinite(e.high)).toBe(true)
   })
 
-  it('la cota inferior nunca queda por debajo de cero si el rival puntuo', () => {
+  it('la cota inferior no baja del margen de deuda', () => {
     const e = reconstructBalance(rival, MLS_LEAGUE)
-    expect(e.low).toBeGreaterThanOrEqual(0)
+    expect(e.low).toBeGreaterThanOrEqual(
+      -rival.teamValue * MLS_LEAGUE.maxDebtPctOfTeamValue,
+    )
+  })
+
+  it('el margen de deuda se declara cuando de verdad recorta', () => {
+    const enRojo = {
+      ...rival,
+      transactions: [tx('purchase', M(-40)), tx('purchase', M(-30))],
+    }
+    const e = reconstructBalance(enRojo, MLS_LEAGUE)
+    expect(e.constraintsApplied.join(' ')).toMatch(/margen de deuda/)
+  })
+
+  it('pero si admite un saldo negativo, porque el juego lo admite', () => {
+    // La comprobacion que faltaba. Un rival que se ha gastado todo puede estar
+    // en rojo, y el modelo tiene que poder decirlo en vez de plantarlo en cero.
+    const gastador = {
+      ...rival,
+      transactions: [tx('purchase', M(-45)), tx('purchase', M(-8))],
+    }
+    const e = reconstructBalance(gastador, MLS_LEAGUE)
+    expect(e.low).toBeLessThan(0)
   })
 
   it('explica que le falta al historial en vez de decir que no lo tiene', () => {
