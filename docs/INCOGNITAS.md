@@ -17,17 +17,18 @@ hubiera un cargo de ~900.000 por jornada sin modelar, no cuadraria.
 
 Estado: `salaries.enabled = false`, confirmado contra datos reales.
 
-## 2. Sirve la deuda del 25% para pagar clausulas? (impacto ALTO)
+## 2. Sirve la deuda del 25% para pagar clausulas? (RESUELTO: si)
 
-La puja maxima es el saldo mas el 25% del valor del equipo. No he podido confirmar en
-ninguna fuente de Mister si ese margen se puede usar para pagar una clausula o solo para
-pujar en el mercado.
+La puja maxima es el saldo mas el 25% del valor del equipo, y ese margen SI se puede usar
+para pagar una clausula. Confirmado por quien juega la liga.
 
-Por que importa: determina la capacidad real de raid, tanto la tuya como la que
-atribuimos a los rivales al calcular el riesgo de que te roben.
+Por que importaba: determina la capacidad real de raid, la tuya y la que se atribuye a
+los rivales al calcular el riesgo de que te roben. Con el margen dentro, un rival con el
+saldo a cero sigue siendo una amenaza; sin el, no lo seria.
 
-Estado: el motor asume que si aplica. Es la hipotesis conservadora, porque sobreestima la
-amenaza rival, que es el error seguro.
+Estado: el motor ya lo asumia, asi que no hay nada que cambiar. Deja de ser una hipotesis
+conservadora y pasa a ser un dato, que no es lo mismo: la hipotesis obligaba a leer toda
+capacidad de robo con reservas.
 
 ## 3. Base de coste de las cesiones (impacto BAJO)
 
@@ -41,13 +42,33 @@ Estado: las cesiones no se modelan como canal de fichaje. Si se documenta el efe
 colateral util: un jugador cedido no puede ser fichado por nadie, asi que ceder es una
 forma de blindar a un jugador cobrando por ello.
 
-## 4. Horario de verano (impacto MEDIO)
+## 4. Horario de verano (RESUELTO en lo practico)
 
-Los horarios oficiales de Mister se publican en UTC+1. No he podido confirmar si se
-desplazan con el horario de verano espanol o si se mantienen fijos todo el ano.
+Los dos ciclos diarios, confirmados por quien juega la liga:
 
-Estado: el workflow de ingesta corre a las 04:20, 05:20, 16:20 y 17:20 UTC y es
-idempotente, de modo que cubre ambas interpretaciones. Correr de mas es gratis.
+- **05:00** hora espanola: se resuelve el mercado y entran las ofertas.
+- **17:00** hora espanola: la oferta adicional de Mister.
+
+Son horas LOCALES, no UTC, y eso es lo que faltaba por saber. Con ello el calendario
+actual vale todo el ano sin tocarlo:
+
+| | resolucion en UTC | primera ingesta | margen |
+|---|---|---|---|
+| Verano (UTC+2) | 03:00 y 15:00 | 04:20 y 16:20 | 80 min |
+| Invierno (UTC+1) | 04:00 y 16:00 | 04:20 y 16:20 | 20 min |
+
+Veinte minutos en invierno es margen corto pero suficiente, y las pasadas de 05:20 y
+17:20 lo cubren si un dia Mister se retrasa. La ingesta es idempotente, asi que correr de
+mas no cuesta nada.
+
+**Lo que esto destapa, y no es menor:** si las horas del feed son locales espanolas,
+`feedItemDate` las esta convirtiendo a ISO con sufijo `Z`, o sea tratandolas como UTC.
+Todas las fechas del feed llevarian dos horas de mas en verano y una en invierno.
+
+Para el orden de los apuntes da igual, porque el desplazamiento es uniforme, y para
+agrupar por dia de mercado incluso es lo correcto: los dias de Mister son dias locales.
+Pero mezcla mal con el libro de balance propio, que si viene en marca unix de verdad. Se
+puede zanjar comparando un mismo traspaso en las dos fuentes; esta pendiente.
 
 ## 5. Movimientos de los rivales (RESUELTO)
 
@@ -75,8 +96,19 @@ Estado: `bonusPerPoint = 0`.
 
 ## 7. Longevidad de la sesion capturada (impacto ALTO)
 
-Esta es la incognita que decide si el sistema aguanta nueve meses solo, y la
-evidencia disponible es mas floja de lo que parece a primera vista.
+**En una frase:** el asesor entra en Mister con una cookie copiada de tu navegador, y
+nadie sabe cuanto dura esa cookie antes de que Mister la invalide.
+
+Cuando eso pase, la ingesta diaria empezara a fallar y los datos se quedaran congelados
+en el ultimo dia bueno. No se pierde nada ni se rompe nada: hay que volver a capturar la
+sesion y actualizar el secret. El sistema lo detecta y lo dice con ese mensaje en lugar
+de fallar de forma confusa.
+
+Es alta prioridad porque es lo unico que puede tumbar el sistema entero sin previo aviso,
+y porque la temporada dura nueve meses.
+
+Lo que sigue es la evidencia de cuanto puede aguantar, que es mas floja de lo que parece
+a primera vista.
 
 **Lo que si esta comprobado:**
 
