@@ -137,10 +137,47 @@ export interface PlayersPage {
   owners?: unknown[]
 }
 
+/**
+ * Un cambio de duenno de un jugador, tal cual lo publica la ficha.
+ *
+ * Es la fuente de la que sale el reparto inicial, y la clave esta en lo que
+ * NO trae: el reparto de principio de temporada no genera registro. Un jugador
+ * con `owners` vacio es un jugador que le tocó en el sorteo a quien lo tiene
+ * hoy. Si la lista trae algo, quien lo tenia al empezar es el `id_uc_from` de
+ * la entrada mas antigua, y si ese es 0 (Mister) es que no era de nadie.
+ */
+export interface RawOwnerRecord {
+  /** Id del traspaso. Creciente, asi que ordena la cadena. */
+  id?: number
+  id_player?: number
+  /** 0 es Mister, o sea el mercado. */
+  id_uc_from?: number
+  id_uc_to?: number
+  /** Nombres de manager, utiles para depurar; los ids son los que mandan. */
+  from?: string
+  to?: string
+  price?: number
+  /** Formato "31 ago 2026". */
+  date?: string
+  type?: string
+}
+
 export interface PlayerDetail {
   player?: RawPlayerRecord & { market?: unknown }
   points_history?: unknown[]
-  values_chart?: { points?: { x?: unknown; y?: number }[] }
+  /**
+   * Valor de mercado dia a dia, un anno hacia atras.
+   *
+   * El tipo que habia escrito aqui era `{ x, y }` y es falso: Mister devuelve
+   * `{ value, date }`, con la fecha en texto ("17 ago 2026"). Nunca se habia
+   * leido el campo, asi que el error no daba la cara.
+   *
+   * Importa porque es lo que permite valorar la plantilla del reparto al
+   * precio que tenia el dia del reparto en vez de al de hoy, que era la mayor
+   * fuente de error de los saldos rivales.
+   */
+  values_chart?: { points?: { value?: number; date?: string }[] }
+  owners?: RawOwnerRecord[]
   playerRepo?: { injuries?: unknown[] }
   [k: string]: unknown
 }

@@ -554,3 +554,44 @@ describe('las subidas de clausula no se publican en ninguna parte', () => {
     expect(conSuelo.low).toBe(sinSuelo.low)
   })
 })
+
+describe('cuando ya no queda nada que suponer, se dice', () => {
+  /**
+   * El reparto inicial era el ultimo termino supuesto, y mientras lo fuera el
+   * saldo de un rival era un intervalo de varios millones. Con baseline.json
+   * -que reconstruye el reparto desde la cadena de propietarios y el valor de
+   * cada jugador el dia del sorteo- ese termino pasa a ser dato, y entonces el
+   * intervalo colapsa.
+   *
+   * Que colapse no bastaba: se seguia reportando `exact: false`, o sea "entre
+   * 6,2M y 6,2M", que es la misma cifra disfrazada de duda.
+   */
+  const completo = {
+    managerId: 4,
+    transactions: [
+      { ...tx('purchase', M(-8)), date: '2026-08-20T05:00:00Z' },
+      { ...tx('sale', M(3)), date: '2026-08-25T05:00:00Z' },
+    ],
+    historyComplete: true,
+    teamValue: M(50),
+    averageLineupValue: M(30),
+    jornadaRanks: [],
+    quinielaObserved: true,
+    maxClauseSpend: 0,
+    minClauseSpend: 0,
+  }
+
+  it('con el reparto conocido el intervalo colapsa y se declara exacto', () => {
+    const e = reconstructBalance({ ...completo, initialSquadValue: M(37.5) }, MLS_LEAGUE)
+    expect(e.low).toBe(e.high)
+    expect(e.exact).toBe(true)
+    // 12,5M de caja, menos 8, mas 3.
+    expect(e.estimate).toBe(M(7.5))
+  })
+
+  it('sin el reparto sigue habiendo intervalo y no se declara exacto', () => {
+    const e = reconstructBalance(completo, MLS_LEAGUE)
+    expect(e.high).toBeGreaterThan(e.low)
+    expect(e.exact).toBe(false)
+  })
+})

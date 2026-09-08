@@ -8,7 +8,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "capture:session": "node src/capture-session.ts",
     "check:auth": "node src/check-auth.ts",
-    "probe": "node src/probe.ts"
+    "probe": "node src/probe.ts",
+    "baseline": "node src/baseline.ts"
   },
   "dependencies": {
     "@mls/core": "workspace:*",

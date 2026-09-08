@@ -483,7 +483,12 @@ export function reconstructBalance(
     estimate: Math.round((low + high) / 2),
     low: Math.round(low),
     high: Math.round(high),
-    exact: false,
+    // Si el intervalo ha colapsado en un punto, el saldo ES exacto y hay que
+    // decirlo: "entre 6,2M y 6,2M" es la misma cifra disfrazada de duda, y
+    // quien lo lee no puede saber si puede fiarse. Ocurre cuando no queda
+    // ningun termino por suponer: historial completo, reparto conocido por
+    // baseline.json, gasto en clausulas exacto y quiniela observada.
+    exact: Math.round(low) === Math.round(high),
     components,
     unknowns,
     constraintsApplied,

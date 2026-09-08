@@ -64,7 +64,7 @@ const log = (msg: string) => console.log(`[ingesta] ${msg}`)
  * leido y de su orden de magnitud, que es lo util para depurar, sin publicar la
  * cifra.
  */
-function redacted(amount: number): string {
+export function redacted(amount: number): string {
   if (!Number.isFinite(amount)) return 'ilegible'
   const digits = Math.abs(Math.round(amount)).toString().length
   return `${amount < 0 ? 'negativo' : 'positivo'}, ${digits} digitos`

@@ -1,0 +1,217 @@
+import {
+  MisterHttp, MisterEndpoints, authenticate, parsePlayerRows, parseStandingsMembers,
+  reconstructDraft, feedItemDate, type PlayerDetail,
+} from '@mls/mister-client'
+import { MLS_LEAGUE } from '@mls/core'
+import { loadConfig } from './config.ts'
+import { normalizePlayer, redacted } from './ingest.ts'
+import { seasonPaths, writeJson, readJson } from './storage.ts'
+
+/**
+ * Calcula el reparto inicial de la liga y lo deja escrito en baseline.json.
+ *
+ * Es un comando aparte y no parte de la ingesta diaria porque el reparto es
+ * INMUTABLE: ocurrio una vez, en agosto, y no cambia. Meterlo en el cron
+ * significaria pedir la ficha de doscientos y pico jugadores cada dia para
+ * recalcular un numero que ya se sabe.
+ *
+ * Lo que resuelve: la caja de partida de cada manager es el presupuesto menos
+ * lo que valia su plantilla repartida, y ese era el ultimo termino que se
+ * suponia. Mientras se supuso, el saldo de un rival era un intervalo de varios
+ * millones, y con un intervalo asi no se decide nada.
+ *
+ * El metodo esta validado contra la unica cuenta cuya caja inicial se conoce
+ * -la propia, que la publica su libro de movimientos-: da 37.528.000 de
+ * plantilla y por tanto 12.472.000 de caja, que es exactamente lo observado.
+ *
+ *   node src/baseline.ts            calcula y escribe
+ *   node src/baseline.ts --dry-run  calcula y solo lo imprime
+ */
+
+const log = (msg: string): void => console.log(`[baseline] ${msg}`)
+
+/** Fecha del reparto: el dia de la entrada mas antigua del feed. */
+export function draftDateFromFeed(fechas: (string | undefined)[]): string | null {
+  const validas = fechas.filter((f): f is string => typeof f === 'string' && f.length >= 10).sort()
+  return validas.length > 0 ? validas[0]!.slice(0, 10) : null
+}
+
+async function main(): Promise<void> {
+  const dryRun = process.argv.includes('--dry-run')
+  const config = loadConfig()
+  const http = new MisterHttp({ minDelayMs: config.throttleMs, jitterMs: config.throttleMs })
+
+  const { method } = await authenticate(
+    { session: config.session, email: config.email, password: config.password },
+    http,
+  )
+  if (config.leagueId) http.leagueId = config.leagueId
+  log(`autenticado por ${method}`)
+
+  const api = new MisterEndpoints(http)
+
+  // --- Quien tiene hoy a quien ---
+  const catalogo = await api.getAllPlayers()
+  const jugadores = catalogo.map(normalizePlayer).filter((p) => p !== null)
+  const duennoHoy = new Map<number, number>()
+  for (const p of jugadores) duennoHoy.set(p.id, p.ownerId ?? 0)
+  log(`${jugadores.length} jugadores en el catalogo, ${
+    [...duennoHoy.values()].filter((v) => v > 0).length} con duenno`)
+
+  // --- Cuando fue el reparto ---
+  const { items, complete } = await api.getAllFeed()
+  if (!complete) {
+    log('AVISO: el feed no llego al principio de temporada; la fecha del reparto puede estar mal')
+  }
+  const ahora = new Date()
+  const draftDate = draftDateFromFeed(items.map((it) => feedItemDate(it, ahora)))
+  if (!draftDate) {
+    console.error('[baseline] no se pudo datar el reparto desde el feed; se aborta')
+    process.exitCode = 1
+    return
+  }
+  log(`el feed arranca el ${draftDate}, que se toma como fecha del reparto`)
+
+  // --- Que jugadores hay que consultar ---
+  //
+  // Los que hoy tiene alguien, MAS los que aparecen en cualquier traspaso del
+  // feed. Los segundos hacen falta porque un jugador repartido y luego vendido
+  // ya no figura en ninguna plantilla, y sin el la plantilla inicial de quien
+  // lo tuvo saldria corta.
+  const candidatos = new Set<number>()
+  for (const [id, duenno] of duennoHoy) if (duenno > 0) candidatos.add(id)
+  for (const it of items) {
+    if (it['category'] !== 'transfer') continue
+    const data = it['data']
+    if (!Array.isArray(data)) continue
+    for (const d of data) {
+      const id = Number((d as Record<string, unknown>)['id'])
+      if (Number.isFinite(id) && id > 0) candidatos.add(id)
+    }
+  }
+  log(`${candidatos.size} jugadores a consultar (plantillas de hoy + traspasados)`)
+
+  // --- La ficha de cada uno ---
+  const detalles = new Map<number, PlayerDetail>()
+  let fallos = 0
+  for (const id of candidatos) {
+    try {
+      detalles.set(id, await api.getPlayerDetail(id))
+    } catch (err) {
+      fallos++
+      if (fallos > 20) {
+        console.error(`[baseline] demasiados fallos (ultimo: ${String(err)}); se aborta`)
+        process.exitCode = 1
+        return
+      }
+    }
+  }
+  log(`${detalles.size} fichas leidas (${fallos} fallos)`)
+
+  const reparto = reconstructDraft(detalles, duennoHoy, draftDate)
+
+  // Un jugador que no se pudo valorar no se cuenta como cero: eso inflaria la
+  // caja inicial de su duenno en silencio, que es el tipo de fallo que este
+  // comando existe para cerrar. Se declara y se aborta.
+  if (reparto.missingValue.length > 0) {
+    log(`AVISO: ${reparto.missingValue.length} jugadores sin valor en ${draftDate}`)
+    if (reparto.missingValue.length > 5) {
+      console.error('[baseline] demasiados sin valorar; el baseline seria erroneo. Se aborta.')
+      process.exitCode = 1
+      return
+    }
+  }
+
+  // --- Contraste contra la cuenta propia ---
+  //
+  // La unica verificacion que vale: la caja inicial propia se conoce por el
+  // libro de movimientos, asi que si el metodo la reproduce, vale para los
+  // nueve rivales, que es donde no hay con que comprobar.
+  const members = parseStandingsMembers(await api.getStandingsHtml())
+  const nombres = new Map(members.map((m) => [m.id, m.slug]))
+
+  // Quien soy yo: el manager que posee los jugadores que devuelve /team.
+  const misIds = parsePlayerRows(await api.getTeamHtml()).map((p) => p.id)
+  const votos = new Map<number, number>()
+  for (const id of misIds) {
+    const d = duennoHoy.get(id) ?? 0
+    if (d > 0) votos.set(d, (votos.get(d) ?? 0) + 1)
+  }
+  let selfId = 0
+  let mejor = 0
+  for (const [id, n] of votos) if (n > mejor) { mejor = n; selfId = id }
+
+  log('')
+  log('reparto reconstruido:')
+  const filas = Object.entries(reparto.valueByManager).sort((a, b) => b[1] - a[1])
+  for (const [id, valor] of filas) {
+    const caja = MLS_LEAGUE.initialBudget - valor
+    const marca = Number(id) === selfId ? ' <- tu' : ''
+    log(`  ${(nombres.get(Number(id)) ?? id).padEnd(24)} plantilla ${
+      redacted(valor)}  caja ${redacted(caja)}${marca}`)
+  }
+
+  // El contraste que da valor a todo lo demas: la caja inicial propia se
+  // conoce por el libro de movimientos, asi que si el metodo la reproduce vale
+  // para los nueve rivales, donde no hay con que comprobar.
+  log('')
+  const balance = await api.getBalance().catch(() => null)
+  const cajaObservada = observedInitialCashFromHistory(balance?.history ?? [])
+  if (selfId === 0) {
+    log('CONTRASTE: no se pudo identificar tu cuenta; el baseline queda sin verificar')
+  } else if (cajaObservada === null) {
+    log('CONTRASTE: tu libro no publica el apunte de caja inicial; queda sin verificar')
+  } else {
+    const reconstruida = MLS_LEAGUE.initialBudget - (reparto.valueByManager[String(selfId)] ?? 0)
+    const error = reconstruida - cajaObservada
+    log(`CONTRASTE contra tu cuenta: error ${error === 0 ? 'CERO, exacto' : redacted(error)}`)
+    if (error !== 0) {
+      log('el reparto reconstruido NO reproduce tu caja inicial: no te fies de los rivales')
+    }
+  }
+
+  if (dryRun) {
+    log('--dry-run: no se escribe nada')
+    return
+  }
+
+  const paths = seasonPaths(config.dataDir, config.seasonId)
+  const previo = readJson<{ initialSquadValueByManager: Record<string, number> }>(
+    `${paths.root}/baseline.json`,
+  )
+  if (previo) log('ya habia un baseline.json; se sobreescribe con el reconstruido')
+
+  writeJson(`${paths.root}/baseline.json`, {
+    draftDate,
+    initialSquadValueByManager: reparto.valueByManager,
+    players: reparto.players.length,
+    generatedAt: new Date().toISOString(),
+  })
+  log(`escrito ${paths.root}/baseline.json con ${filas.length} managers`)
+}
+
+main().catch((err: unknown) => {
+  console.error('[baseline]', err)
+  process.exitCode = 1
+})
+
+/**
+ * La caja con la que arranco la cuenta propia, segun su libro.
+ *
+ * Mister la acredita como un apunte unico antes de la primera jornada. Es el
+ * unico numero contra el que se puede verificar el reparto reconstruido.
+ */
+function observedInitialCashFromHistory(history: unknown[]): number | null {
+  let masAntiguo: { ts: number; balance: number; amount: number } | null = null
+  for (const h of history) {
+    const r = h as Record<string, unknown>
+    const ts = Number(r['date'] ?? r['ts'] ?? 0)
+    const balance = Number(r['balance'])
+    const amount = Number(r['amount'])
+    if (!Number.isFinite(balance) || !Number.isFinite(amount)) continue
+    if (!masAntiguo || ts < masAntiguo.ts) masAntiguo = { ts, balance, amount }
+  }
+  if (!masAntiguo) return null
+  // El saldo ANTES del apunte mas antiguo es la caja de partida.
+  return Math.round(masAntiguo.balance - masAntiguo.amount)
+}
