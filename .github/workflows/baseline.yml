@@ -1,0 +1,80 @@
+name: Reparto inicial (una sola vez)
+
+# El reparto de principio de temporada es INMUTABLE: ocurrio en agosto y no
+# cambia. Por eso esto no es un cron sino un boton: se ejecuta una vez, escribe
+# data/<temporada>/baseline.json en el repositorio privado, y la ingesta diaria
+# ya lo lee de ahi. Meterlo en el cron seria pedir la ficha de doscientos y
+# pico jugadores cada dia para recalcular un numero que ya se sabe.
+#
+# Arranca en dry-run a proposito. La ejecucion imprime el contraste contra la
+# cuenta propia -la unica cuya caja inicial se conoce por su libro-, y conviene
+# verlo en cero antes de dejar que escriba nada.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Calcular e imprimir el contraste, sin escribir baseline.json'
+        type: boolean
+        default: true
+
+concurrency:
+  group: ingesta
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Descargar el repositorio de datos (privado)
+        if: ${{ !inputs.dry_run }}
+        uses: actions/checkout@v4
+        with:
+          repository: francisconaranjonrvz/mls-fantasy-data
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: data-repo
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Reconstruir el reparto inicial
+        env:
+          MISTER_SESSION: ${{ secrets.MISTER_SESSION }}
+          MISTER_EMAIL: ${{ secrets.MISTER_EMAIL }}
+          MISTER_PASSWORD: ${{ secrets.MISTER_PASSWORD }}
+          MISTER_LEAGUE_ID: ${{ secrets.MISTER_LEAGUE_ID }}
+          # Son unos 250 jugadores a ficha por jugador. A este ritmo son unos
+          # doce minutos, que para algo que se ejecuta una vez es asumible y no
+          # castiga a Mister.
+          THROTTLE_MS: '2500'
+          DATA_DIR: ${{ inputs.dry_run && 'data' || 'data-repo/data' }}
+        run: node apps/scraper/src/baseline.ts ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Commitear baseline.json en el repositorio privado
+        if: ${{ !inputs.dry_run }}
+        working-directory: data-repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "Sin cambios que commitear"
+          else
+            git commit -m "datos: reparto inicial reconstruido $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
