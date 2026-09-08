@@ -1,8 +1,10 @@
 import {
   MisterHttp, MisterEndpoints, authenticate, parsePlayerRows, parseStandingsMembers,
-  reconstructDraft, calibrateDraftDate, datesBetween, feedItemDate, type PlayerDetail,
+  reconstructDraft, calibrateDraftDate, datesBetween, feedItemDate,
+  movementsToTransactions, type PlayerDetail,
 } from '@mls/mister-client'
 import { MLS_LEAGUE } from '@mls/core'
+import { observedInitialCash } from '@mls/engine'
 import { loadConfig } from './config.ts'
 import { normalizePlayer, redacted } from './ingest.ts'
 import { seasonPaths, writeJson, readJson } from './storage.ts'
@@ -128,8 +130,15 @@ async function main(): Promise<void> {
     return
   }
 
+  // La caja inicial se lee con el mismo camino que usa la ingesta, no con un
+  // parser escrito aqui. La primera version traia uno propio, sin probar, y
+  // devolvia una cifra equivocada: la reconstruccion del reparto era correcta
+  // -en el navegador daba 37.528.000 clavados- pero se comparaba contra un
+  // objetivo malo, asi que ningun dia cuadraba y el comando abortaba culpando
+  // al metodo. Reescribir a mano algo que ya existe probado sale caro.
   const balance = await api.getBalance().catch(() => null)
-  const cajaObservada = observedInitialCashFromHistory(balance?.history ?? [])
+  const propias = movementsToTransactions(balance?.history ?? [], selfId, () => undefined)
+  const cajaObservada = observedInitialCash(propias)
   if (cajaObservada === null) {
     console.error('[baseline] tu libro no publica la caja inicial; sin ella no hay con que calibrar')
     process.exitCode = 1
@@ -227,24 +236,3 @@ main().catch((err: unknown) => {
   console.error('[baseline]', err)
   process.exitCode = 1
 })
-
-/**
- * La caja con la que arranco la cuenta propia, segun su libro.
- *
- * Mister la acredita como un apunte unico antes de la primera jornada. Es el
- * unico numero contra el que se puede verificar el reparto reconstruido.
- */
-function observedInitialCashFromHistory(history: unknown[]): number | null {
-  let masAntiguo: { ts: number; balance: number; amount: number } | null = null
-  for (const h of history) {
-    const r = h as Record<string, unknown>
-    const ts = Number(r['date'] ?? r['ts'] ?? 0)
-    const balance = Number(r['balance'])
-    const amount = Number(r['amount'])
-    if (!Number.isFinite(balance) || !Number.isFinite(amount)) continue
-    if (!masAntiguo || ts < masAntiguo.ts) masAntiguo = { ts, balance, amount }
-  }
-  if (!masAntiguo) return null
-  // El saldo ANTES del apunte mas antiguo es la caja de partida.
-  return Math.round(masAntiguo.balance - masAntiguo.amount)
-}
